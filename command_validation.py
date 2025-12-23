@@ -1,0 +1,461 @@
+#!/usr/bin/env python3
+
+from dotenv import load_dotenv
+import os, re
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Optional
+from enum import Enum, IntEnum
+import pika, json, threading
+import queue
+from pathlib import Path
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
+import urllib3, requests
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+ALERTS_FILE = Path("alerts.json")
+ACCEPTED_FILE = Path("accepted.json")
+
+load_dotenv()
+
+RABBIT_HOST = os.getenv("RABBIT_HOST")
+RABBIT_PORT = int(os.getenv("RABBIT_PORT"))
+RABBIT_USER = os.getenv("RABBIT_USER")
+RABBIT_PASS = os.getenv("RABBIT_PASS")
+RABBIT_QUEUE = os.getenv("RABBIT_QUEUE")
+RABBIT_MAX_PRIORITY = int(os.getenv("RABBIT_MAX_PRIORITY"))
+RABBIT_RESULT_QUEUE = os.getenv("RABBIT_RESULT_QUEUE")
+
+app = FastAPI()
+
+
+PENDING_READ_COMMANDS = {}
+
+class FunctionCode(IntEnum):    
+    READ_HOLDING_REGISTERS = 3
+    WRITE_HOLDING_REGISTERS = 6
+
+class Command_Type(str, Enum):
+    write = "w"
+    read = "r"                  # this will accept only 'w' or 'r' as as input for the command_type in the cmd only
+
+class Priority(str, Enum):
+    normal = "normal"
+    high = "critical"               # this will accept only normal or high in the priority option only, other than that will be alerted.
+
+class Command(BaseModel):
+    command_type: Command_Type 
+    device_id: str
+    register_number: str
+    value: Optional[int] = Field(None, ge=0, le=65535)
+    priority: Priority 
+    description: Optional[str] = Field(None, max_length=500)
+    issued_by: str
+    function_code: FunctionCode 
+    command_id: str
+    timestamp: datetime = Field(default_factory=datetime.now) 
+    
+    class Config:
+        extra = "forbid"
+        
+
+# accepted command logging function
+def log_accepted_commands(cmd: Command):
+    cmd_data = jsonable_encoder(cmd)
+
+    if isinstance(cmd_data.get("timestamp"), datetime):
+        cmd_data["timestamp"] = cmd_data["timestamp"].isoformat()
+
+
+    entry = {
+        "command": cmd_data
+    }
+
+    success, error = send_to_splunk(entry, sourcetype="accepted_command")
+    if not success:
+        print(f" Failed to send to splunk: {error}")
+
+    if ACCEPTED_FILE.exists():
+        with open(ACCEPTED_FILE, "r+", encoding="utf-8") as f:
+            try:
+                logs = json.load(f)
+            except json.JSONDecodeError:
+                logs = []
+
+            logs.append(entry)
+            f.seek(0)
+            f.truncate()
+            json.dump(logs, f, indent=2)
+    else:
+        with open(ACCEPTED_FILE, "w", encoding="utf-8") as f:
+            json.dump([entry], f, indent=2)
+
+
+
+# alerts log function
+def log_alert(cmd_data: dict, reason: str):
+    cmd_data = jsonable_encoder(cmd_data)
+
+    alert_entry = {
+        "reason" : reason,
+        "command_data": cmd_data
+    }
+
+    success, error = send_to_splunk(alert_entry, sourcetype="command_alert")
+    if not success:
+        print(f" Failed to send to splunk: {error}")
+    
+    if ALERTS_FILE.exists():
+        with open(ALERTS_FILE, "r+", encoding="utf-8") as f:
+            try:
+                alerts = json.load(f)
+            except json.JSONDecodeError:
+                alerts = []
+            alerts.append(alert_entry)
+            f.seek(0)
+            json.dump(alerts, f, indent=2)
+    else:
+        with open(ALERTS_FILE, "w", encoding="utf-8") as f:
+            json.dump([alert_entry], f, indent=2)
+
+
+# sending logs to splunk indexer function
+def send_to_splunk(log_data: dict, sourcetype: str):
+    url = os.getenv("SPLUNK_HEC_URL")
+    token = os.getenv("SPLUNK_HEC_TOKEN")
+
+    if not url or not token:
+        return False, "Splunk HEC configuration missing"
+    
+    headers = {
+    "Authorization": f"Splunk {token}",
+    "Content-Type": "application/json"
+    }
+
+    payload = {
+        "host": "dmz-command-api",  # Add host field
+        "source": "command_validation_api",  # Add source field
+        "index": "dmz_validation",
+        "event": log_data  # Wrap log_data inside "event" key
+    }
+
+    
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload), verify=False, timeout=7)
+        print(f"📥 HTTP Status: {response.status_code}")
+        print(f"📥 Response text: {response.text}")
+
+
+        if response.status_code in (200, 201):
+            print(f"✅ Successfully sent to Splunk: {sourcetype}")
+            return True, None
+        
+        return False, f"Splunk HEC error: {response.text}"
+    except Exception as e:
+        return False, str(e)
+
+
+
+# validated rules for the command
+def validate_command(cmd: Command):
+    if not re.match(r"^(HR_4000[1-9]|HR_4001[01])$", cmd.register_number):
+        return False, "device should be within the range 'HR_40001 - HR_40011'"
+
+    if not re.match(r"^PLC-00[1-9]$", cmd.device_id):
+        return False, "device should follow 'PLC-<number> format"
+    
+    if cmd.command_id:
+        if not re.match(r"^CMD-(00[1-9]|0[1-9][0-9]|100)$", cmd.command_id):
+            return False, "command_id must be in format: CMD-001 to CMD-100"
+
+    if cmd.issued_by:
+        if not re.fullmatch(r"^Admin1$", cmd.issued_by):
+            return False, "can be issued only by <Admin1> only"
+    
+      # Additional validation for write commands
+    if cmd.command_type == Command_Type.write and cmd.value is None:
+        return False, "Value is required for write commands"
+        
+    # Additional validation for read commands (value should be None)
+    if cmd.command_type == Command_Type.read and cmd.value is not None:
+        return False, "Value should not be provided for read commands"
+    
+    # Function code check
+    if cmd.command_type == Command_Type.read and cmd.function_code != FunctionCode.READ_HOLDING_REGISTERS:
+        return False, f"Read commands must use the function code {FunctionCode.READ_HOLDING_REGISTERS}, not {cmd.function_code}"
+
+    if cmd.command_type == Command_Type.write and cmd.function_code != FunctionCode.WRITE_HOLDING_REGISTERS:
+        return False, f"Write commands must use the function code {FunctionCode.WRITE_HOLDING_REGISTERS}, not {cmd.function_code}"
+ 
+    return True, None
+
+
+
+def publish_to_rabbitmq(cmd: Command):
+    credentials = pika.PlainCredentials(RABBIT_USER, RABBIT_PASS)
+    parameters = pika.ConnectionParameters(host=RABBIT_HOST, port=RABBIT_PORT, credentials=credentials)
+    conn = pika.BlockingConnection(parameters)
+    ch = conn.channel()
+
+
+    ch.queue_declare(
+        queue=RABBIT_QUEUE,
+        durable=True,
+        arguments={"x-max-priority": RABBIT_MAX_PRIORITY}
+    )
+
+    cmd_dict = cmd.dict()
+
+    if isinstance(cmd_dict.get("timestamp"), datetime):
+        cmd_dict["timestamp"] = cmd_dict["timestamp"].isoformat()
+
+    body = json.dumps(cmd_dict, ensure_ascii=False)
+
+    priority_val = RABBIT_MAX_PRIORITY if cmd.priority == "critical" else 0
+    properties = pika.BasicProperties(
+        delivery_mode=2,
+        priority=priority_val,
+        content_type="application/json"
+    )
+
+
+    ch.basic_publish(
+        exchange="",
+        routing_key=RABBIT_QUEUE,
+        body=body,
+        properties=properties
+    )
+
+    conn.close()
+
+
+def validate_plc_result(result: dict):
+    # Check if it's a valid result structure
+    if not isinstance(result, dict):
+        return False
+    
+    # Check for command_id (required)
+    if not result.get("command_id"):
+        return False
+    
+    # Check status - accept both "success" and "ok"
+    status = result.get("status")
+    if status not in ["success", "ok"]:
+        return False
+    
+    # Check value - handle both int and float, and allow None for errors
+    value = result.get("value")
+    if value is not None:
+        try:
+            # Convert to float first, then check range
+            float_value = float(value)
+            if not (0 <= float_value <= 65535):
+                return False
+        except (TypeError, ValueError):
+            return False
+    
+    # Register number is optional in response
+    # Type is optional in response
+    
+    return True
+
+ 
+def consume_scada_results():
+    credentials = pika.PlainCredentials(RABBIT_USER, RABBIT_PASS)
+    parameters = pika.ConnectionParameters(host=RABBIT_HOST, port=RABBIT_PORT, credentials=credentials)
+    conn = pika.BlockingConnection(parameters)
+    ch = conn.channel()
+
+    ch.queue_declare(
+    queue=RABBIT_RESULT_QUEUE,
+    durable=True,
+    arguments={"x-max-priority": 10}
+    )
+
+    for method, properties, body in ch.consume(RABBIT_RESULT_QUEUE, auto_ack=True):
+        try:
+            data = json.loads(body)
+            cmd_id = data.get("command_id")
+            if cmd_id and cmd_id in PENDING_READ_COMMANDS and validate_plc_result(data):
+                # Put SCADA response into the waiting queue
+                PENDING_READ_COMMANDS[cmd_id].put(data)
+        except Exception as e:
+            print(f"Error processing SCADA result: {e}")
+
+
+#---------------------- BODY -----------------------------#
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+@app.exception_handler(RequestValidationError)
+async def validation_log_alert(request: Request, exc: RequestValidationError):
+    try:
+        body = await request.json()
+    except:
+        body = {}
+
+    alert_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "reason": "Pydantic validation failed",
+        "command_data": jsonable_encoder(body)
+    }
+
+    if ALERTS_FILE.exists():
+        with open(ALERTS_FILE, "r+", encoding="utf-8") as f:
+            try:
+                alerts = json.load(f)  
+            except json.JSONDecodeError:
+                alerts = []
+            alerts.append(alert_entry)
+            f.seek(0)
+            f.truncate()
+            json.dump(alerts, f, indent=2)
+    else:
+        with open(ALERTS_FILE, "w", encoding="utf-8") as f:
+            json.dump([alert_entry], f, indent=2)
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": alert_entry["command_data"]}
+    )
+
+
+
+
+# Start it in startup event
+@app.on_event("startup")
+def start_background_tasks():
+    # Start SCADA consumer (keep this - it's fine)
+    t1 = threading.Thread(target=consume_scada_results, daemon=True)
+    t1.start()
+    
+
+
+    print("✅ Command Validation API started successfully")
+
+
+
+@app.get("/")
+def root():
+    return {"status": "COMMAND VALIDATION API RUNNING"}
+
+
+# ----------- MAIN API ENDPOINT --------------
+@app.post('/process_enqueue')
+def process_q(cmd: Command):
+    ok, reason = validate_command(cmd)
+    if not ok:
+        log_alert(cmd, reason)
+        raise HTTPException(status_code=400, detail=reason)
+
+    log_accepted_commands(cmd)
+    try:
+        publish_to_rabbitmq(cmd)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"failed to publish to rabbitmq: {e}")
+    
+    if cmd.command_type == Command_Type.read:
+        response_queue = queue.Queue()
+        PENDING_READ_COMMANDS[cmd.command_id] = response_queue
+
+        try:
+            result = response_queue.get(timeout=8)
+        except queue.Empty:
+            del PENDING_READ_COMMANDS[cmd.command_id]
+            raise HTTPException(status_code=504, detail="No response from <HMI>")
+
+        del PENDING_READ_COMMANDS[cmd.command_id]
+        return {"status": "success", "command_id": cmd.command_id, "value": result["value"]}
+
+
+    cmd_out = cmd.dict()
+    if isinstance(cmd_out.get("timestamp"), datetime):
+        cmd_out["timestamp"] = cmd_out["timestamp"].isoformat()
+
+
+    return {"status": "accepted", "command": cmd_out}
+
+
+
+
+
+
+
+
+#--- testing ----#
+
+
+
+@app.get("/test-rabbitmq")
+def test_rabbitmq_connection():
+    """Test RabbitMQ connection directly"""
+    try:
+        print(f"🔧 Connection details:")
+        print(f"   Host: {RABBIT_HOST}:{RABBIT_PORT}")
+        print(f"   User: {RABBIT_USER}")
+        print(f"   Queue: {RABBIT_QUEUE}")
+        
+        credentials = pika.PlainCredentials(RABBIT_USER, RABBIT_PASS)
+        parameters = pika.ConnectionParameters(
+            host=RABBIT_HOST,
+            port=RABBIT_PORT,
+            credentials=credentials,
+            heartbeat=600,
+            blocked_connection_timeout=300
+        )
+        
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        
+        # Test queue declaration
+        channel.queue_declare(
+            queue=RABBIT_QUEUE,
+            durable=True,
+            arguments={"x-max-priority": RABBIT_MAX_PRIORITY}
+        )
+        
+        connection.close()
+        
+        return {
+            "status": "success", 
+            "message": "RabbitMQ connection successful!",
+            "details": {
+                "host": RABBIT_HOST,
+                "port": RABBIT_PORT,
+                "queue": RABBIT_QUEUE
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "details": {
+                "host": RABBIT_HOST,
+                "port": RABBIT_PORT,
+                "queue": RABBIT_QUEUE
+            }
+        }
+
+
+
+'''
+No, not exactly.
+Your current code works like this:
+When command arrives → validates immediately
+If valid → calls log_accepted_commands(cmd) which:
+Immediately sends to Splunk via send_to_splunk()
+Also saves to local file (accepted.json)
+If invalid → calls log_alert(cmd, reason) which:
+Immediately sends to Splunk via send_to_splunk()
+Also saves to local file (alerts.json)
+Important: It's NOT reading from the JSON files and sending to Splunk. It's sending directly when the event happens, and also saving to JSON files as backup.
+The JSON files are just backup storage, not the source for Splunk. Splunk gets events live as they happen.
+'''
