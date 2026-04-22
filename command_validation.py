@@ -64,15 +64,19 @@ class Command(BaseModel):
         
 
 # accepted command logging function
-def log_accepted_commands(cmd: Command):
+def log_accepted_commands(cmd: Command, read_value=None):
     cmd_data = jsonable_encoder(cmd)
 
     if isinstance(cmd_data.get("timestamp"), datetime):
         cmd_data["timestamp"] = cmd_data["timestamp"].isoformat()
 
+    if read_value is not None:
+        cmd_data["value"] = read_value
+    
 
     entry = {
-        "command": cmd_data
+        "command": cmd_data,
+        "decision": "approved"
     }
 
     success, error = send_to_splunk(entry, sourcetype="accepted_command")
@@ -102,10 +106,16 @@ def log_alert(cmd_data: dict, reason: str):
 
     alert_entry = {
         "reason" : reason,
+        "decision": "rejected",
         "command_data": cmd_data
     }
+    splunk_payload = {
+        "command_data": alert_entry["command_data"],
+        "decision": "rejected"
+    }
 
-    success, error = send_to_splunk(alert_entry, sourcetype="command_alert")
+    success, error = send_to_splunk(splunk_payload, sourcetype="command_alert")
+
     if not success:
         print(f" Failed to send to splunk: {error}")
     
@@ -116,7 +126,7 @@ def log_alert(cmd_data: dict, reason: str):
             except json.JSONDecodeError:
                 alerts = []
             alerts.append(alert_entry)
-            f.seek(0)
+            f.seek(0) 
             json.dump(alerts, f, indent=2)
     else:
         with open(ALERTS_FILE, "w", encoding="utf-8") as f:
@@ -145,7 +155,7 @@ def send_to_splunk(log_data: dict, sourcetype: str):
 
     
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload), verify=False, timeout=7)
+        response = requests.post(url, headers=headers, data=json.dumps(payload), verify=False, timeout=1)
         print(f"📥 HTTP Status: {response.status_code}")
         print(f"📥 Response text: {response.text}")
 
@@ -159,6 +169,10 @@ def send_to_splunk(log_data: dict, sourcetype: str):
         return False, str(e)
 
 
+ROLE_PERMISSIONS = {
+    "Admin1": {Command_Type.read, Command_Type.write},
+    "User1": {Command_Type.read}
+}
 
 # validated rules for the command
 def validate_command(cmd: Command):
@@ -167,15 +181,19 @@ def validate_command(cmd: Command):
 
     if not re.match(r"^PLC-00[1-9]$", cmd.device_id):
         return False, "device should follow 'PLC-<number> format"
-    
-    if cmd.command_id:
-        if not re.match(r"^CMD-(00[1-9]|0[1-9][0-9]|100)$", cmd.command_id):
-            return False, "command_id must be in format: CMD-001 to CMD-100"
 
-    if cmd.issued_by:
-        if not re.fullmatch(r"^Admin1$", cmd.issued_by):
-            return False, "can be issued only by <Admin1> only"
+    # Role based access control 
+    if cmd.issued_by not in ROLE_PERMISSIONS:
+        return False, f"Unkown User '{cmd.issued_by}'. Must be one of: {list(ROLE_PERMISSIONS.keys())}"
+
+    allowed_commands = ROLE_PERMISSIONS[cmd.issued_by]
     
+    if cmd.command_type.value not in allowed_commands:
+        return False, f"'{cmd.issued_by}' does not have permission to send {cmd.command_type.value!r} commands"
+    
+    if not re.fullmatch(r"^CMD-[A-F0-9]{12}$", cmd.command_id):
+        return False, "Invalid command_id format"
+
       # Additional validation for write commands
     if cmd.command_type == Command_Type.write and cmd.value is None:
         return False, "Value is required for write commands"
@@ -287,11 +305,7 @@ def consume_scada_results():
             print(f"Error processing SCADA result: {e}")
 
 
-#---------------------- BODY -----------------------------#
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from fastapi import Request
-
+#-------------------------- BODY -----------------------------#
 @app.exception_handler(RequestValidationError)
 async def validation_log_alert(request: Request, exc: RequestValidationError):
     try:
@@ -302,7 +316,8 @@ async def validation_log_alert(request: Request, exc: RequestValidationError):
     alert_entry = {
         "timestamp": datetime.now().isoformat(),
         "reason": "Pydantic validation failed",
-        "command_data": jsonable_encoder(body)
+        "command_data": jsonable_encoder(body),
+        "decision": "rejected"
     }
 
     if ALERTS_FILE.exists():
@@ -318,6 +333,19 @@ async def validation_log_alert(request: Request, exc: RequestValidationError):
     else:
         with open(ALERTS_FILE, "w", encoding="utf-8") as f:
             json.dump([alert_entry], f, indent=2)
+    
+    splunk_payload = {
+        "command_data": jsonable_encoder(body),
+        "decision": "rejected"
+    }
+
+    success, error = send_to_splunk(
+        splunk_payload,
+        sourcetype="command_alert"
+    )
+    
+    if not success:
+        print(f"❌ Failed to send validation alert to Splunk: {error}")
 
     return JSONResponse(
         status_code=422,
@@ -353,31 +381,46 @@ def process_q(cmd: Command):
         log_alert(cmd, reason)
         raise HTTPException(status_code=400, detail=reason)
 
-    log_accepted_commands(cmd)
-    try:
-        publish_to_rabbitmq(cmd)
+    if cmd.command_type == Command_Type.write:
+        log_accepted_commands(cmd)
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"failed to publish to rabbitmq: {e}")
-    
+    # REGISTER READ COMMAND FIRST 
     if cmd.command_type == Command_Type.read:
         response_queue = queue.Queue()
         PENDING_READ_COMMANDS[cmd.command_id] = response_queue
 
+    # Then publish
+    try:
+        publish_to_rabbitmq(cmd)
+    except Exception as e:
+        # Clean up if publish fails
+        if cmd.command_type == Command_Type.read:
+            PENDING_READ_COMMANDS.pop(cmd.command_id, None)
+        raise HTTPException(status_code=500, detail=f"failed to publish to rabbitmq: {e}")
+
+    # Handle read response
+    if cmd.command_type == Command_Type.read:
         try:
             result = response_queue.get(timeout=8)
         except queue.Empty:
-            del PENDING_READ_COMMANDS[cmd.command_id]
+            PENDING_READ_COMMANDS.pop(cmd.command_id, None)
             raise HTTPException(status_code=504, detail="No response from <HMI>")
 
-        del PENDING_READ_COMMANDS[cmd.command_id]
-        return {"status": "success", "command_id": cmd.command_id, "value": result["value"]}
+        PENDING_READ_COMMANDS.pop(cmd.command_id, None)
 
+        log_accepted_commands(cmd, read_value=result.get("value"))
 
+        return {
+            "status": "success",
+            "command_id": cmd.command_id,
+            "value": result.get("value"),
+            "timestamp": cmd.timestamp
+        }
+
+    # Write command response
     cmd_out = cmd.dict()
     if isinstance(cmd_out.get("timestamp"), datetime):
         cmd_out["timestamp"] = cmd_out["timestamp"].isoformat()
-
 
     return {"status": "accepted", "command": cmd_out}
 
