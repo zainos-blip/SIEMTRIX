@@ -2,7 +2,8 @@
 """
 Integrated Zeek OT Receiver - COMPLETE WORKING VERSION with Custom OpenModsim Logs
 Captures packets, saves to PCAP, and processes them with Zeek
-Generates ALL standard Zeek logs PLUS custom openmodsim.log
+Generates ALL standard Zeek logs PLUS custom static_openmodsim.log (non‑rotating)
+UPDATED: Custom script logs ports 1502, 8090, 5672, 502.
 """
 import socket
 import os
@@ -35,7 +36,7 @@ class IntegratedZeekReceiver:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
         
-        # Create custom Zeek script for OpenModsim logs
+        # Create custom Zeek script for OpenModsim logs (now includes multiple ports)
         self.create_custom_zeek_script()
         
         self.create_pcap()
@@ -51,16 +52,18 @@ class IntegratedZeekReceiver:
         print(f"║ Listening on port: {ZEEK_PORT:<42}║")
         print(f"║ PCAP directory: {PCAP_DIR:<42}║")
         print(f"║ Log directory: {LOG_DIR:<42}║")
-        print(f"║ Custom log: openmodsim.log{' ' * 34}║")
+        print(f"║ Custom log: static_openmodsim.log{' ' * 30}║")
+        print(f"║ Logging ports: 1502, 8090, 5672, 502{' ' * 23}║")
         print(f"╚{'═'*60}╝")
 
     def create_custom_zeek_script(self):
-        """Create custom Zeek script for OpenModsim PLC logs in partner's desired format"""
+        """Create custom Zeek script for OT PLC and API logs (ports 1502, 8090, 5672, 502) – STATIC filename"""
         script_path = "/opt/zeek/share/zeek/site/openmodsim.zeek"
         os.makedirs("/opt/zeek/share/zeek/site", exist_ok=True)
         
         with open(script_path, 'w') as f:
-            f.write("""# Custom OpenModsim PLC logging - Partner's desired format
+            f.write("""# Custom OT logging - Partner's desired format
+# Logs connections on ports: 1502 (PLC/Modbus), 8090 (OT Puller API), 5672 (RabbitMQ), 502 (Modbus)
 module OpenModsim;
 
 export {
@@ -72,8 +75,8 @@ export {
         src_port: port &log;
         dst_ip: addr &log;
         dst_port: port &log;
-        orig_bytes: count &log;
-        resp_bytes: count &log;
+        orig_bytes: count &log &optional;
+        resp_bytes: count &log &optional;
         placeholder1: string &log &optional;
         placeholder2: string &log &optional;
         placeholder3: string &log &optional;
@@ -81,20 +84,22 @@ export {
 }
 
 event zeek_init() {
-    Log::create_stream(OpenModsim::LOG, [$columns=Info, $path="openmodsim"]);
+    # Use a static, non‑rotated filename
+    Log::create_stream(OpenModsim::LOG, [$columns=Info, $path="/opt/zeek/logs/current/static_openmodsim"]);
 }
 
 event connection_state_remove(c: connection) {
-    # Log only PLC traffic (port 5800)
-    if (c$id$resp_p == 5800/tcp || c$id$orig_p == 5800/tcp) {
+    # Log OT traffic on relevant ports: 1502 (PLC), 8090 (API), 5672 (RabbitMQ), 502 (Modbus)
+    local ot_ports = set(1502/tcp, 8090/tcp, 5672/tcp, 502/tcp);
+    if (c$id$resp_p in ot_ports || c$id$orig_p in ot_ports) {
         local rec: OpenModsim::Info = [
             $ts=network_time(),
             $src_ip=c$id$orig_h,
             $src_port=c$id$orig_p,
             $dst_ip=c$id$resp_h,
             $dst_port=c$id$resp_p,
-            $orig_bytes=c$conn$orig_bytes,
-            $resp_bytes=c$conn$resp_bytes,
+            $orig_bytes = (c$conn?$orig_bytes ? c$conn$orig_bytes : 0),
+            $resp_bytes = (c$conn?$resp_bytes ? c$conn$resp_bytes : 0),
             $placeholder1="-",
             $placeholder2="-",
             $placeholder3="-"
@@ -103,7 +108,7 @@ event connection_state_remove(c: connection) {
     }
 }
 """)
-        print(f"[+] Custom Zeek script created: {script_path}")
+        print(f"[+] Custom Zeek script created: {script_path} (logging ports 1502, 8090, 5672, 502)")
 
     def create_pcap(self):
         """Create a new PCAP file with proper header"""
@@ -156,7 +161,7 @@ event connection_state_remove(c: connection) {
         try:
             # Run Zeek on the PCAP file with BOTH:
             # - "local" for full Zeek analysis (generates all standard logs)
-            # - custom script for partner's desired openmodsim.log format
+            # - custom script for partner's desired static_openmodsim.log format
             cmd = ["/opt/zeek/bin/zeek", "-C", "-r", pcap_file, 
                    "local",                                # Full Zeek analysis
                    "/opt/zeek/share/zeek/site/openmodsim.zeek"]  # Custom format
@@ -183,7 +188,7 @@ event connection_state_remove(c: connection) {
             for f in os.listdir(LOG_DIR):
                 if f.endswith('.log'):
                     f_path = os.path.join(LOG_DIR, f)
-                    if current_time - os.path.getmtime(f_path) < 60:  # Updated in last minute
+                    if current_time - os.path.getmtime(f_path) < 60:
                         log_files.append(f)
             
             if log_files:
@@ -251,8 +256,7 @@ event connection_state_remove(c: connection) {
                             f.seek(last_positions.get('conn', 0))
                             for line in f:
                                 if line.strip() and not line.startswith('#'):
-                                    # Look for OT ports
-                                    if any(port in line for port in ['502', '5800', '20000', '102']):
+                                    if any(port in line for port in ['502', '1502', '20000', '102']):
                                         parts = line.split()
                                         if len(parts) >= 9:
                                             print(f"\n[ZEEK OT] {parts[2]}:{parts[3]} -> {parts[4]}:{parts[5]}")
@@ -280,7 +284,6 @@ event connection_state_remove(c: connection) {
         if not self.pcap_handle:
             return
         
-        # PCAP packet header
         ts_sec = int(time.time())
         ts_usec = int((time.time() - ts_sec) * 1000000)
         incl_len = len(data)
@@ -300,11 +303,9 @@ event connection_state_remove(c: connection) {
         self.running = False
         elapsed = time.time() - self.start_time
         
-        # Close current PCAP
         if self.pcap_handle:
             self.pcap_handle.close()
         
-        # Process the final PCAP
         if self.pcap_file and os.path.exists(self.pcap_file) and self.pcap_file not in self.processed_pcaps:
             print("[+] Processing final PCAP...")
             self.process_pcap_with_zeek(self.pcap_file)
@@ -320,7 +321,6 @@ event connection_state_remove(c: connection) {
 
     def start(self):
         """Start the receiver"""
-        # Create socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
@@ -332,8 +332,6 @@ event connection_state_remove(c: connection) {
             sys.exit(1)
         
         print("[+] Waiting for packets...\n")
-        
-        # Set socket timeout
         sock.settimeout(1.0)
         
         while self.running:
@@ -341,15 +339,12 @@ event connection_state_remove(c: connection) {
                 data, addr = sock.recvfrom(65535)
                 self.packet_count += 1
                 
-                # Write to PCAP
                 self.write_packet(data)
                 
-                # Rotate PCAP every hour
                 if time.time() - self.last_rotation > 3600:
                     self.create_pcap()
                     self.last_rotation = time.time()
                 
-                # Show progress
                 if self.packet_count % 100 == 0:
                     elapsed = time.time() - self.start_time
                     rate = self.packet_count / elapsed if elapsed > 0 else 0
