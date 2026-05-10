@@ -42,7 +42,6 @@ TAG_MAPPING = {
 }
 
 
-
 #sending both response and command logs to the command validation index
 def send_to_splunk(log_data: dict, sourcetype: str):
     url = os.getenv("SPLUNK_HEC_URL")
@@ -280,8 +279,7 @@ def consume_commands():
     def callback(ch, method, properties, body):
         cmd = json.loads(body.decode())
         log_entry = {
-            "command": cmd,
-            "timestamp": datetime.utcnow().isoformat()
+            "command": cmd
         }
 
         from pathlib import Path
@@ -347,8 +345,7 @@ def consume_commands():
 
             RESULT_LOG_FILE = Path("ot_results.json")
             log_entry = {
-                "response": response,
-                "timestamp": datetime.utcnow().isoformat()
+                "response": response
             }
 
             if RESULT_LOG_FILE.exists():
@@ -406,88 +403,3 @@ def root():
 
 
 
-
-
-
-
-# TEST CONNECTION --------------------
-@app.get("/test-connection")
-def test_scadabr_connection():
-    """Test if ScadaBR connection works"""
-    try:
-        # Try to get ScadaBR service methods
-        methods = [method for method in dir(soap_client.service) if not method.startswith('_')]
-        return {
-            "status": "connected", 
-            "available_methods": methods,
-            "wsdl": SCADABR_WSDL
-        }
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-
-@app.post("/direct-write/{xid}")
-def direct_write_test(xid: str, value: int):
-    """Test writing directly to ScadaBR"""
-    try:
-        result = scadabr_write(xid, value)
-        return {
-            "xid": xid, 
-            "value": value, 
-            "result": result,
-            "success": result == "ACK"
-        }
-    except Exception as e:
-        return {"error": str(e), "xid": xid, "value": value}
-
-@app.get("/direct-read/{xid}")
-def direct_read_test(xid: str):
-    """Test reading directly from ScadaBR"""
-    try:
-        value = scadabr_read(xid)
-        return {"xid": xid, "value": value, "success": value is not None}
-    except Exception as e:
-        return {"error": str(e), "xid": xid}
-    
-
-
-
-
-# DEBUG METHODS MAN
-@app.get("/debug-write-method")
-def debug_write_method():
-    """Discover the correct parameters for writeData method"""
-    try:
-        # Inspect the writeData method signature
-        method_info = soap_client.wsdl.port_types[0].operations['writeData']
-        print("Method info:", method_info)
-        
-        # Get the expected input parameters
-        write_method = soap_client.service._binding.operations['writeData']
-        input_schema = write_method.input.body.type.elements
-        print("Input schema:", input_schema)
-        
-        return {
-            "method_info": str(method_info),
-            "input_schema": str([elem for elem in input_schema])
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.get("/test-splunk")
-def test_splunk_connection():
-    """Test Splunk HEC connection from OT Puller"""
-    test_data = {
-        "test": "message",
-        "timestamp": datetime.utcnow().isoformat(),
-        "service": "ot_puller_test"
-    }
-    
-    print("🧪 Testing Splunk HEC connection...")
-    success, error = send_to_splunk(test_data, sourcetype="test")
-    
-    return {
-        "success": success,
-        "error": error,
-        "hec_url": os.getenv("SPLUNK_HEC_URL"),
-        "hec_token_set": bool(os.getenv("SPLUNK_HEC_TOKEN"))
-    }
