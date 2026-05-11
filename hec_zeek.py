@@ -9,6 +9,9 @@ HEC_URL = "https://100.103.226.100:8088/services/collector"
 HEC_TOKEN = "eb36eeec-abfb-4f00-980c-bbd4bf166b54"
 LOG_FILE = "/opt/zeek/logs/current/static_openmodsim.log"
 
+# Throttle: seconds to wait after sending each event
+SEND_DELAY = 0.5   # adjust as needed
+
 def send_to_hec(line):
     headers = {"Authorization": f"Splunk {HEC_TOKEN}", "Content-Type": "application/json"}
     payload = {"event": line.strip(), "sourcetype": "zeek:openmodsim", "index": "ot_ids_behavior", "host": "kali"}
@@ -20,6 +23,8 @@ def send_to_hec(line):
             print(f"✗ Zeek HEC error {response.status_code}: {response.text}")
     except Exception as e:
         print(f"✗ Zeek send failed: {e}")
+    
+    time.sleep(SEND_DELAY)
 
 def tail_with_reopen():
     last_ino = 0
@@ -34,9 +39,6 @@ def tail_with_reopen():
                 f = open(LOG_FILE, 'r')
                 f.seek(0, os.SEEK_END)
                 print(f"Zeek file changed, reopening. New inode: {current_ino}")
-            else:
-                # just use existing f
-                pass
         except Exception as e:
             print(f"Zeek stat error: {e}")
             time.sleep(1)
@@ -57,5 +59,5 @@ if __name__ == "__main__":
     if not os.path.exists(LOG_FILE):
         print(f"Error: {LOG_FILE} not found! Creating empty file.")
         open(LOG_FILE, 'a').close()
-    print(f"Zeek HEC forwarder started. Monitoring {LOG_FILE}")
+    print(f"Zeek HEC forwarder started. Monitoring {LOG_FILE} (delay {SEND_DELAY}s per event)")
     tail_with_reopen()
