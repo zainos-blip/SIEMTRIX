@@ -1,0 +1,58 @@
+# ============================================
+# OT SECURITY SURICATA RULES - UPDATED FOR WSL ATTACKS
+# ============================================
+
+# Modbus Protocol Detection (Port 502)
+alert tcp any any -> any 502 (msg:"OT: Modbus Traffic Detected"; sid:1000001; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Read Command - FC1"; content:"|00 00 00 00 00 06|"; depth:6; content:"|01|"; offset:7; sid:1000002; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Read Command - FC2"; content:"|00 00 00 00 00 06|"; depth:6; content:"|02|"; offset:7; sid:1000003; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Read Command - FC3"; content:"|00 00 00 00 00 06|"; depth:6; content:"|03|"; offset:7; sid:1000004; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Read Command - FC4"; content:"|00 00 00 00 00 06|"; depth:6; content:"|04|"; offset:7; sid:1000005; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Write Single Coil"; content:"|00 00 00 00 00 06|"; depth:6; content:"|05|"; offset:7; sid:1000006; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Write Single Register"; content:"|00 00 00 00 00 06|"; depth:6; content:"|06|"; offset:7; sid:1000007; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Write Multiple Coils"; content:"|00 00 00 00 00|"; depth:5; content:"|0F|"; offset:7; sid:1000008; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Write Multiple Registers"; content:"|00 00 00 00 00|"; depth:5; content:"|10|"; offset:7; sid:1000009; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Exception Response"; content:"|80|"; offset:7; sid:1000010; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Modbus Illegal Function Code"; content:"|5a|"; offset:7; sid:1000011; rev:1;)
+
+# Custom PLC Protocol (Port 1502) - OpenModsim
+alert tcp any any ->  192.168.18.41 1502 (msg:"OT: PLC Command to OpenModsim"; sid:2000001; rev:1;)
+alert tcp 172.20.96.57 any -> 192.168.18.41 1502 (msg:"OT: SCADA to PLC Command"; dsize:12; sid:2000002; rev:1;)
+alert tcp 192.168.18.41 1502 -> 172.20.96.57 any (msg:"OT: PLC Response to SCADA"; dsize:31; sid:2000003; rev:1;)
+alert tcp 192.168.18.41 1502 -> 172.20.96.57 any (msg:"OT: PLC Ack Response"; dsize:12; sid:2000004; rev:1;)
+
+# RabbitMQ Detection (Port 5672)
+alert tcp any any -> 127.0.0.1 5672 (msg:"OT: RabbitMQ Local Traffic"; sid:3000001; rev:1;)
+
+# SCADA HMI Detection (Port 9090)
+alert tcp any any -> 172.20.96.57 9090 (msg:"OT: SCADA HMI Access"; sid:4000001; rev:1;)
+alert tcp any any -> 172.20.96.57 9090 (msg:"OT: SCADA Login Attempt"; content:"POST"; http_method; content:"login"; http_uri; sid:4000002; rev:1;)
+
+# OT Puller API (Port 8090)
+alert tcp any any -> 172.20.96.57 8090 (msg:"OT: OT Puller API Call"; sid:5000001; rev:1;)
+
+# Unauthorized Access Detection (UPDATED: removed ! condition)
+alert tcp any any -> 172.20.96.57 502 (msg:"OT: External Modbus Connection"; sid:6000001; rev:1;)
+alert tcp any any -> 192.168.18.41 1502 (msg:"OT: External PLC Connection"; sid:6000002; rev:1;)
+
+# Command Injection Attempts
+alert tcp any any -> 172.20.96.57 8090 (msg:"OT: Possible Command Injection"; content:"exec"; nocase; sid:6000003; rev:1;)
+alert tcp any any -> 172.20.96.57 8090 (msg:"OT: Possible Command Injection"; content:"system"; nocase; sid:6000004; rev:1;)
+alert tcp any any -> 172.20.96.57 8090 (msg:"OT: Possible Command Injection"; content:"eval"; nocase; sid:6000005; rev:1;)
+alert tcp any any -> 172.20.96.57 8090 (msg:"OT: Possible Command Injection"; content:"curl"; nocase; sid:6000006; rev:1;)
+alert tcp any any -> 172.20.96.57 8090 (msg:"OT: Possible Command Injection"; content:"wget"; nocase; sid:6000007; rev:1;)
+
+# Multiple Failed Connections
+alert tcp any any -> 192.168.18.41 1502 (msg:"OT: Multiple PLC Connection Attempts"; flags:S; threshold:type threshold, track by_src, count 20, seconds 10; sid:6000008; rev:1;)
+
+# Unusual Communication Direction
+alert tcp 192.168.18.41 1502 -> 172.20.96.57 9090 (msg:"OT: PLC Initiating Connection to SCADA"; sid:6000009; rev:1;)
+
+# Business Hours Violations
+alert tcp 172.20.96.57 any -> 192.168.18.41 1502 (msg:"OT: After-hours PLC Access"; flow:to_server; sid:7000001; rev:1;)
+alert tcp 172.20.96.57 any -> 192.168.18.41 1502 (msg:"OT: Weekend PLC Access"; flow:to_server; sid:7000002; rev:1;)
+
+# Protocol Violations
+alert tcp any any -> any 502 (msg:"OT: Invalid Modbus Function"; content:"|00 00 00 00 00 06|"; depth:6; content:"|99|"; offset:7; sid:9000001; rev:1;)
+alert tcp any any -> any 502 (msg:"OT: Malformed Modbus Packet"; dsize:<8; sid:9000002; rev:1;)
+
