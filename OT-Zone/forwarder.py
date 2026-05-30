@@ -10,10 +10,10 @@ import threading
 
 # ===== UPDATED CONFIGURATION =====
 # Your Kali VM new IP (bridged mode)
-KALI_IP = "192.168.18.38"  # <-- CHANGE THIS to your new Kali IP
+KALI_IP = {KALI_IP}  # <-- CHANGE THIS to your new Kali IP
 
 # If direct to Kali doesn't work, use Windows as relay:
-WINDOWS_HOST_IP = "192.168.18.106"  # Your Windows host IP
+WINDOWS_HOST_IP = {WINDOWS_IP}  # Your Windows host IP
 USE_WINDOWS_RELAY = False  # Set to True if direct connection fails
 
 # Determine target IP

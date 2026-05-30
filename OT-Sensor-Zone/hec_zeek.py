@@ -12,7 +12,7 @@ import urllib3
 # Suppress insecure HTTPS warnings (only if you use self-signed certs)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-HEC_URL = "https://100.103.226.100:8088/services/collector"
+HEC_URL = "https://{INDEXER_IP}:{INDEXER_PORT}/services/collector"
 HEC_TOKEN = "eb36eeec-abfb-4f00-980c-bbd4bf166b54"
 LOG_FILE = "/opt/zeek/logs/current/static_openmodsim.log"
 

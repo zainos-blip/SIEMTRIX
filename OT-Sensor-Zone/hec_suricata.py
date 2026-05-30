@@ -5,7 +5,7 @@ import json
 import os
 import sys
 
-HEC_URL = "https://100.103.226.100:8088/services/collector"
+HEC_URL = "https://{INDEXER_IP}:{INDEXER_PORT}/services/collector"
 HEC_TOKEN = "5f6c0b59-ad84-4be3-90ba-0d4d4562e59c"
 LOG_FILE = "/var/log/suricata/static_eve.json"
 
