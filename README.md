@@ -168,7 +168,7 @@ All response actions are written to the dmz_ml_ids index as audit log entries, m
 
 ## Demo Video
 
-[Watch the demo](demo/221543_221591_DEMO_FYP3.mp4)
+[![Watch the Demo](https://img.youtube.com/vi/qrWha6SjirM/maxresdefault.jpg)](https://www.youtube.com/watch?v=qrWha6SjirM)
 
 ## Authors
 
