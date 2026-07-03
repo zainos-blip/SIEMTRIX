@@ -166,6 +166,10 @@ All response actions are written to the dmz_ml_ids index as audit log entries, m
 
 ---
 
+## Demo Video
+
+[Watch the demo](demo/221543_221591_DEMO_FYP3.mp4)
+
 ## Authors
 
 **Zain Rashid** — [LinkedIn](https://www.linkedin.com/in/zainrashid04/) · [GitHub](https://github.com/zainos-blip)  
