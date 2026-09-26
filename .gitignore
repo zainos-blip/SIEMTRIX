@@ -1,0 +1,27 @@
+# Secrets / auth
+.env
+.env.*
+auth.json
+
+# Local databases
+*.db
+
+# Runtime logs and state
+*.log
+command_counter.txt
+session_command_counter.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

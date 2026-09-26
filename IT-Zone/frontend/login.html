@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Command Dispatch Console</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Theme"
+        style="position:fixed; top:16px; right:16px; z-index:100;"></button>
+    <div class="login-split">
+        <section class="login-hero">
+            <div class="brand" style="align-items:flex-start;">
+                <div class="brand-logo">
+                    <img src="assets/Logo.png" alt="Logo">
+                </div>
+                <div>
+                    <div
+                        style="font-weight:800; font-size:2.4rem; line-height:1.05; letter-spacing:-0.03em; text-transform:uppercase;">
+                        SIEMTRIX
+                    </div>
+                    <div class="mono" style="margin-top:10px; color:var(--text-secondary); text-transform:uppercase;">
+                        Command Dispatch Console
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top:40px; display:flex; gap:14px;">
+                <div class="zone-indicator">
+                    <span class="status-dot" style="animation:none;"></span>
+                    <span>Zone Status</span>
+                    <span style="color:var(--success-green); font-weight:800;">Secure</span>
+                </div>
+                <div class="zone-indicator">
+                    <span class="status-dot" id="loginDmzDot"
+                        style="background:var(--text-secondary); animation:none;"></span>
+                    <span>DMZ Layer</span>
+                    <span id="loginDmzStatus" style="color:var(--text-secondary); font-weight:800;">Checking...</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="login-form-area">
+            <div class="login-card-inner">
+                <div class="mono" style="color:rgba(239, 68, 68, 0.75); margin-bottom:10px; text-transform:uppercase;">
+                    authorize personnel only
+                </div>
+                <h2 class="page-title" style="margin-bottom:18px;">Operator Login</h2>
+
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="username">Operator ID</label>
+                        <input type="text" id="username" name="username" placeholder="Username" required autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Access Key</label>
+                        <input type="password" id="password" name="password" placeholder="Password" required>
+                    </div>
+                    <div id="loginError" class="error-message hidden"></div>
+                    <button type="submit" class="login-btn">Authenticate</button>
+                </form>
+
+                <div class="mono" style="margin-top:16px; color:rgba(148, 163, 184, 0.75); font-size:0.7rem;">
+                    115-SC-80 v0.2 // SESSION_ENCRYPT: AES-256
+                </div>
+            </div>
+        </section>
+    </div>
+    <script src="app.js"></script>
+    <script>
+        async function checkDmzStatus() {
+            const dot = document.getElementById('loginDmzDot');
+            const statusText = document.getElementById('loginDmzStatus');
+            if (!dot || !statusText) return;
+
+            try {
+                // app.js defines DMZ_URL
+                const resp = await fetch(DMZ_URL, {
+                    headers: { 'ngrok-skip-browser-warning': 'true' }
+                });
+                statusText.textContent = 'Active';
+                statusText.style.color = 'var(--cyber-teal)';
+                dot.style.background = 'var(--cyber-teal)';
+            } catch (err) {
+                statusText.textContent = 'Inactive';
+                statusText.style.color = 'var(--danger-red)';
+                dot.style.background = 'var(--danger-red)';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkDmzStatus();
+            setInterval(checkDmzStatus, 10000);
+        });
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('loginError');
+            const CONNECTION_ERROR_MSG = 'Error: Could not connect to server. Please ensure the backend is running.';
+
+            const parseJsonSafe = async (response) => {
+                try {
+                    return await response.json();
+                } catch (_) {
+                    return null;
+                }
+            };
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await parseJsonSafe(response);
+
+                if (response.ok) {
+                    sessionStorage.setItem('authenticated', 'true');
+                    sessionStorage.setItem('jwt', data.access_token);
+                    sessionStorage.setItem('dmz_session_token', data.dmz_session_token);
+
+                    // Decode JWT to get role and username
+                    const base64Url = data.access_token.split('.')[1];
+                    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+                        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                    }).join(''));
+                    const payload = JSON.parse(jsonPayload);
+
+                    const role = payload.role;
+                    sessionStorage.setItem('username', payload.sub);
+                    sessionStorage.setItem('role', role);
+
+                    if (role === 'admin') {
+                        window.location.href = 'admin.html';
+                    } else {
+                        window.location.href = 'user.html';
+                    }
+                } else {
+                    const raw = data && (data.detail || data.message);
+                    const msg = (typeof raw === 'string' && !raw.toLowerCase().includes('<html')) ? raw : 'Invalid username or password';
+                    errorDiv.textContent = msg;
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                errorDiv.textContent = CONNECTION_ERROR_MSG;
+                errorDiv.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Command Dispatch Console - User</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+    <div class="page-container">
+        <header class="main-header">
+            <div class="header-content">
+                <div class="header-left">
+                    <div class="header-icon">
+                        <img src="assets/Logo.png" alt="Logo">
+                    </div>
+                    <div>
+                        <h1>Command Dispatch Console</h1>
+                        <p class="header-subtitle">Logged in as: <span id="currentUsername"></span></p>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Theme"></button>
+                    <button class="logout-btn" onclick="logout()">
+                        <span>Logout</span>
+                    </button>
+                    <button class="logout-btn" onclick="downloadCsv()">
+                        <span>Download CSV Report</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="tabs" id="sideNav">
+                <div class="side-nav-header">
+                    <div class="side-brand">
+                        <div class="side-brand-badge">
+                        </div>
+                        <div class="side-brand-text">
+                            <div class="side-brand-title">SIEMTRIX</div>
+                            <div class="side-brand-subtitle">ICS Security</div>
+                        </div>
+                    </div>
+                    <button class="side-collapse-btn" type="button" onclick="toggleSidebar()"
+                        aria-label="Toggle sidebar">
+                        <span id="collapseIcon">⟨</span>
+                    </button>
+                </div>
+
+                <button class="tab-button active" onclick="openUserTab(event, 'liveDashboard')">
+                    <span class="tab-icon"><i data-lucide="home"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Dashboard</span>
+                    </span>
+                </button>
+                <button class="tab-button" onclick="openUserTab(event, 'commandHistory')">
+                    <span class="tab-icon"><i data-lucide="activity"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Command Monitor</span>
+                    </span>
+                </button>
+                <button class="tab-button" onclick="openUserTab(event, 'directCommand')">
+                    <span class="tab-icon"><i data-lucide="send"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Submit Command</span>
+                    </span>
+                </button>
+                <div class="dmz-container"
+                    style="margin-top: auto; padding: 1.5rem; border-top: 1px solid rgba(148, 163, 184, 0.14);">
+                    <div class="mono dmz-label"
+                        style="color: var(--text-secondary); font-size: 0.65rem; margin-bottom: 0.5rem;">
+                        DMZ STATUS</div>
+                    <div id="dmzStatusIndicator" class="status-pill muted"
+                        style="width: 100%; display: flex; justify-content: center; align-items: center; white-space: nowrap; padding: 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; border: 1px solid rgba(148, 163, 184, 0.18); background: rgba(148, 163, 184, 0.1);">
+                        CHECKING...</div>
+                </div>
+            </div>
+
+            
+            <div id="liveDashboard" class="tab-content active content-card">
+                <h2 class="card-title">Live Dashboard</h2>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Command ID</th>
+                                <th>Type</th>
+                                <th>Device</th>
+                                <th>Register</th>
+                                <th>Value</th>
+                                <th>Status</th>
+                                <th>DMZ Decision</th>
+                                <th>ML Score</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="liveTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            
+            <div id="commandHistory" class="tab-content content-card">
+                <h2 class="card-title">Command History</h2>
+                <div style="margin: 15px 0;">
+                    <input type="text" id="historyFilter" placeholder="Filter by type, device, status..."
+                        style="padding:8px; border-radius:6px; background:rgba(31, 41, 55, 0.6); color:white; border:1px solid rgba(100, 116, 139, 0.5); width:300px;">
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Command ID</th>
+                                <th>Type</th>
+                                <th>Device</th>
+                                <th>Register</th>
+                                <th>Value</th>
+                                <th>Status</th>
+                                <th>DMZ Decision</th>
+                                <th>ML Score</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            
+            <div id="directCommand" class="tab-content content-card">
+                    <div class="card-header">
+                        <h2 class="card-title">Device Command Management</h2>
+                        <p class="card-description">Read current register values</p>
+                    </div>
+
+                    <div style="padding: 20px;">
+                        <form id="readForm">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="deviceIdRead">Device ID</label>
+                                    <select id="deviceIdRead" required>
+                                        <option value="">Select Device</option>
+                                        <option value="plc-001">plc-001</option>
+                                        <option value="plc-002">plc-002</option>
+                                        <option value="plc-003">plc-003</option>
+                                        <option value="plc-004">plc-004</option>
+                                        <option value="plc-005">plc-005</option>
+                                        <option value="plc-006">plc-006</option>
+                                        <option value="plc-007">plc-007</option>
+                                        <option value="plc-008">plc-008</option>
+                                        <option value="plc-009">plc-009</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="registerNumberRead">Register</label>
+                                    <select id="registerNumberRead" required>
+                                        <option value="">Select Register</option>
+                                        <option value="40001">40001</option>
+                                        <option value="40002">40002</option>
+                                        <option value="40003">40003</option>
+                                        <option value="40004">40004</option>
+                                        <option value="40005">40005</option>
+                                        <option value="40006">40006</option>
+                                        <option value="40007">40007</option>
+                                        <option value="40008">40008</option>
+                                        <option value="40009">40009</option>
+                                        <option value="40010">40010</option>
+                                        <option value="40011">40011</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="priorityRead">Priority</label>
+                                    <select id="priorityRead" required>
+                                        <option value="normal">Normal</option>
+                                        <option value="critical">Critical</option>
+                                    </select>
+                                </div>
+                                <div class="form-group full-width">
+                                    <label>Read Value</label>
+                                    <textarea id="readResultDisplay" readonly rows="3"></textarea>
+                                </div>
+                            </div>
+                            <button type="submit" class="submit-btn read-btn">Check Read Command Status</button>
+                        </form>
+                    </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        let livePollingInterval = null;
+        let lastCommandCount = 0;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize Lucide icons
+            lucide.createIcons();
+
+            // Basic guard: prevent opening directly without login
+            if (!sessionStorage.getItem('jwt') || !sessionStorage.getItem('dmz_session_token')) {
+                sessionStorage.clear();
+                window.location.href = 'login.html';
+                return;
+            }
+
+            const username = sessionStorage.getItem('username');
+            if (username) {
+                document.getElementById('currentUsername').textContent = username;
+            }
+            openUserTab(null, 'liveDashboard');
+
+            // Restore sidebar state
+            try {
+                const collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+                if (collapsed) document.body.classList.add('sidebar-collapsed');
+                const icon = document.getElementById('collapseIcon');
+                if (icon) icon.textContent = collapsed ? '⟩' : '⟨';
+            } catch (_) { }
+
+            // Start DMZ health check
+            checkDmzHealth();
+            setInterval(checkDmzHealth, 10000);
+        });
+
+        async function checkDmzHealth() {
+            const indicator = document.getElementById('dmzStatusIndicator');
+            if (!indicator) return;
+            
+            const dmzToken = sessionStorage.getItem('dmz_session_token');
+            if (!dmzToken) {
+                indicator.textContent = 'NO TOKEN';
+                indicator.className = 'status-pill muted';
+                return;
+            }
+            
+            try {
+                const resp = await fetch(`${DMZ_URL}/api/session/commands`, {
+                    headers: {
+                        'x-session-token': dmzToken,
+                        'ngrok-skip-browser-warning': 'true'
+                    }
+                });
+                
+                if (resp.ok) {
+                    indicator.textContent = 'DMZ ONLINE';
+                    indicator.className = 'status-pill success';
+                } else {
+                    indicator.textContent = 'DMZ OFFLINE';
+                    indicator.className = 'status-pill danger';
+                }
+            } catch (err) {
+                indicator.textContent = 'DMZ OFFLINE';
+                indicator.className = 'status-pill danger';
+            }
+        }
+
+        function toggleSidebar() {
+            const collapsed = document.body.classList.toggle('sidebar-collapsed');
+            try { localStorage.setItem('sidebarCollapsed', String(collapsed)); } catch (_) { }
+            const icon = document.getElementById('collapseIcon');
+            if (icon) icon.textContent = collapsed ? '⟩' : '⟨';
+        }
+
+        function openUserTab(evt, tabName) {
+            const tabs = document.getElementsByClassName("tab-content");
+            for (let i = 0; i < tabs.length; i++) tabs[i].style.display = "none";
+            const btns = document.getElementsByClassName("tab-button");
+            for (let i = 0; i < btns.length; i++) {
+                if (btns[i].parentElement.classList.contains('tabs')) {
+                    btns[i].classList.remove('active');
+                }
+            }
+            document.getElementById(tabName).style.display = "block";
+            if (evt) evt.currentTarget.classList.add('active');
+
+            clearInterval(livePollingInterval);
+            if (tabName === 'liveDashboard') {
+                fetchCommands(true);
+                livePollingInterval = setInterval(() => fetchCommands(true), 2000);
+            } else if (tabName === 'commandHistory') {
+                fetchCommands(false);
+            }
+        }
+
+        async function fetchCommands(isLive) {
+            try {
+                const dmzToken = sessionStorage.getItem('dmz_session_token');
+                const resp = await fetch(`${DMZ_URL}/api/session/commands`, {
+                    headers: {
+                        'x-session-token': dmzToken,
+                        'ngrok-skip-browser-warning': 'true'
+                    }
+                });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const commands = Array.isArray(data) ? data : (data.commands || []);
+
+                if (isLive) {
+                    if (commands.length > lastCommandCount) {
+                        lastCommandCount = commands.length;
+                    }
+                    renderCommandsTable('liveTableBody', commands.slice(-10).reverse());
+                } else {
+                    renderCommandsTable('historyTableBody', commands.reverse());
+                }
+            } catch (e) {
+                console.error("Failed to fetch from DMZ:", e);
+            }
+        }
+
+        const formatTimestamp = (timestamp) => {
+            if (!timestamp) return 'N/A';
+            try {
+                const date = new Date(timestamp);
+                return date.toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                });
+            } catch (e) {
+                return 'N/A';
+            }
+        };
+
+        function renderCommandsTable(tbodyId, commands) {
+            const tbody = document.getElementById(tbodyId);
+            tbody.innerHTML = '';
+
+            // history filter
+            const filterText = document.getElementById('historyFilter') ? document.getElementById('historyFilter').value.toLowerCase() : '';
+
+            const typeMap = { 'r': 'Read', 'w': 'Write' };
+
+            commands.forEach(cmd => {
+                if (filterText) {
+                    const str = JSON.stringify(cmd).toLowerCase();
+                    if (!str.includes(filterText)) return;
+                }
+
+                const tr = document.createElement('tr');
+                let rowClass = '';
+                if (cmd.status === 'blocked' || cmd.decision === 'rejected' || cmd.command_status === 'rejected_by_admin') rowClass = 'row-error';
+                else if (cmd.decision === 'suspicious' || cmd.status === 'pending') rowClass = 'row-warning';
+                else if (cmd.status === 'success' || cmd.status === 'completed' || cmd.command_status === 'approved') rowClass = 'row-success';
+
+                tr.className = rowClass;
+
+                const displayType = typeMap[cmd.command_type] || cmd.command_type || '-';
+
+                tr.innerHTML = `
+                    <td>${cmd.command_id || '-'}</td>
+                    <td>${displayType}</td>
+                    <td>${cmd.device_id || '-'}</td>
+                    <td>${cmd.register_number || cmd.register || '-'}</td>
+                    <td>${cmd.value !== undefined ? cmd.value : '-'}</td>
+                    <td>${cmd.command_status || cmd.status || '-'}</td>
+                    <td>${cmd.dmz_decision || cmd.decision || '-'}</td>
+                    <td>${cmd.ml_score !== undefined ? cmd.ml_score.toFixed(3) : '-'}</td>
+                    <td>${formatTimestamp(cmd.timestamp)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('historyFilter')?.addEventListener('input', () => fetchCommands(false));
+
+        document.getElementById('readForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                command_type: 'r',
+                device_id: document.getElementById('deviceIdRead').value,
+                register: parseInt(document.getElementById('registerNumberRead').value),
+                priority: document.getElementById('priorityRead').value,
+                issued_by: sessionStorage.getItem('username')
+            };
+
+            showToast('Sending...', 'info');
+            try {
+                const resp = await apiFetch(`${API_BASE_URL}/submit_command`, {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                if (resp && resp.ok) {
+                    const data = await resp.json();
+                    const val = data.read_value !== undefined ? data.read_value : 'N/A';
+                    document.getElementById('readResultDisplay').value = val;
+                    showToast('Read command successful');
+                } else {
+                    showToast('Failed to read register', 'error');
+                }
+            } catch (e) { }
+        });
+
+        async function downloadCsv() {
+            try {
+                const resp = await apiFetch(`${API_V1_URL}/session/report?format=csv`);
+                if (resp && resp.ok) {
+                    const blob = await resp.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = "session_report.csv";
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    showToast('Failed to generate report', 'error');
+                }
+            } catch (e) {
+                showToast('Error downloading report', 'error');
+            }
+        }
+    </script>
+</body>
+
+</html>
+
+</html>

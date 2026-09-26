@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Command Dispatch Console - Admin</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Keep only styles not already covered globally */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: rgba(17, 24, 39, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            padding: 24px;
+            border-radius: 14px;
+            width: 360px;
+            color: rgba(226, 232, 240, 0.95);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.65);
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 12px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: rgba(17, 24, 39, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            padding: 12px 20px;
+            border-radius: 10px;
+            color: rgba(226, 232, 240, 0.95);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+            animation: toastSlideIn 0.3s ease-out;
+            max-width: 320px;
+            backdrop-filter: blur(10px);
+        }
+
+        .toast-success {
+            border-left: 4px solid var(--success-green, #10b981);
+        }
+
+        .toast-error {
+            border-left: 4px solid var(--danger-red, #ef4444);
+        }
+
+        .toast-warning {
+            border-left: 4px solid #f59e0b;
+        }
+
+        .toast-info {
+            border-left: 4px solid var(--cyber-teal, #06b6d4);
+        }
+
+        @keyframes toastSlideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Neutralise the read‑result textarea – no green border, same as write inputs */
+        #readResultDisplay {
+            border: 1px solid rgba(148, 163, 184, 0.5) !important;
+            background: rgba(31, 41, 55, 0.6) !important;
+        }
+
+        /* Toggle Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: rgba(148, 163, 184, 0.1);
+            transition: .3s;
+            border-radius: 24px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: rgba(148, 163, 184, 0.6);
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: rgba(6, 182, 212, 0.2);
+            border-color: var(--cyber-teal, #06b6d4);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(22px);
+            background-color: var(--cyber-teal, #06b6d4);
+            box-shadow: 0 0 10px var(--cyber-teal, #06b6d4);
+        }
+
+        /* Make datetime-local calendar icon visible in dark mode */
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page-container">
+        <header class="main-header">
+            <div class="header-content">
+                <div class="header-left">
+                    <div class="header-icon">
+                        <img src="assets/Logo.png" alt="Logo">
+                    </div>
+                    <div>
+                        <h1>Command Dispatch Console</h1>
+                        <p class="header-subtitle">Logged in as: <span id="currentUsername"></span></p>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Theme"></button>
+                    <button class="btn-splunk" onclick="openSplunkDashboard()">
+                        <span>Open Splunk Analytics Dashboard</span>
+                        <span style="opacity:0.9; margin-left:8px;">↗</span>
+                    </button>
+                    <button class="logout-btn" onclick="logout()">
+                        <span>Logout</span>
+                    </button>
+                    <button class="logout-btn" onclick="downloadCsv()">
+                        <span>Download CSV Report</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="tabs" id="sideNav">
+                <div class="side-nav-header">
+                    <div class="side-brand">
+                        <div class="side-brand-badge">
+                        </div>
+                        <div class="side-brand-text">
+                            <div class="side-brand-title">SIEMTRIX</div>
+                            <div class="side-brand-subtitle">ICS Security</div>
+                        </div>
+                    </div>
+                    <button class="side-collapse-btn" type="button" onclick="toggleSidebar()"
+                        aria-label="Toggle sidebar">
+                        <span id="collapseIcon">⟨</span>
+                    </button>
+                </div>
+
+                <button class="tab-button active" onclick="openAdminTab(event, 'liveDashboard')">
+                    <span class="tab-icon"><i data-lucide="home"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Dashboard</span>
+                    </span>
+                </button>
+                <button class="tab-button" onclick="openAdminTab(event, 'directCommand')">
+                    <span class="tab-icon"><i data-lucide="send"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Submit Command</span>
+                    </span>
+                </button>
+                <button class="tab-button" onclick="openAdminTab(event, 'commandHistory')">
+                    <span class="tab-icon"><i data-lucide="activity"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Command Monitor</span>
+                    </span>
+                </button>
+                <button class="tab-button" onclick="openAdminTab(event, 'pendingApprovals')">
+                    <span class="tab-icon"><i data-lucide="clock"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Pending</span>
+                    </span>
+                </button>
+
+                <button class="tab-button" onclick="openAdminTab(event, 'userManagement')">
+                    <span class="tab-icon"><i data-lucide="settings"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Admin Panel</span>
+                    </span>
+                </button>
+                <button class="tab-button" onclick="openAdminTab(event, 'attackSimulation')">
+                    <span class="tab-icon"><i data-lucide="flask-conical"></i></span>
+                    <span class="tab-label">
+                        <span class="tab-title">Simulation</span>
+                    </span>
+                </button>
+                <div class="dmz-container"
+                    style="margin-top: auto; padding: 1.5rem; border-top: 1px solid rgba(148, 163, 184, 0.14);">
+                    <div class="mono dmz-label"
+                        style="color: var(--text-secondary); font-size: 0.65rem; margin-bottom: 0.5rem;">
+                        DMZ STATUS</div>
+                    <div id="dmzStatusIndicator" class="status-pill muted"
+                        style="width: 100%; display: flex; justify-content: center; align-items: center; white-space: nowrap; padding: 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; border: 1px solid rgba(148, 163, 184, 0.18);">
+                        CHECKING...</div>
+                </div>
+            </div>
+
+            
+            <div id="liveDashboard" class="tab-content active content-card">
+                <h2 class="card-title">Live Dashboard</h2>
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Submissions</div>
+                        <div class="stat-value" id="statTotal">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Approved</div>
+                        <div class="stat-value" id="statApproved" style="color: var(--success-green);">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">DMZ Rejections</div>
+                        <div class="stat-value" id="statReject" style="color: var(--danger-red);">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Executed</div>
+                        <div class="stat-value" id="statExecuted" style="color: var(--cyber-teal);">0</div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Command ID</th>
+                                <th>Type</th>
+                                <th>Device</th>
+                                <th>Register</th>
+                                <th>Value</th>
+                                <th>Status</th>
+                                <th>DMZ Decision</th>
+                                <th>ML Score</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="liveTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            
+            <div id="commandHistory" class="tab-content content-card">
+                <h2 class="card-title">Command History</h2>
+                <div style="margin: 15px 0;">
+                    <input type="text" id="historyFilter" placeholder="Filter by type, device, status..."
+                        style="padding:8px; border-radius:6px; background:rgba(31, 41, 55, 0.6); color:white; border:1px solid rgba(100, 116, 139, 0.5); width:300px;">
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Command ID</th>
+                                <th>Type</th>
+                                <th>Device</th>
+                                <th>Register</th>
+                                <th>Value</th>
+                                <th>Status</th>
+                                <th>DMZ Decision</th>
+                                <th>ML Score</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            
+            <div id="directCommand" class="tab-content content-card">
+                <div class="card-header">
+                    <h2 class="card-title">Device Command Management</h2>
+                    <p class="card-description">Send write commands or read current register values</p>
+                </div>
+
+                <div class="tabs cmd-tabs">
+                    <button class="tab-button active" onclick="openCmdTab(event, 'writeCommand')">Write
+                        Command</button>
+                    <button class="tab-button" onclick="openCmdTab(event, 'readCommand')">Read Command</button>
+                </div>
+
+                <div id="writeCommand" class="cmd-tab-content active">
+                    <form id="writeForm">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="deviceIdWrite">Device ID</label>
+                                <select id="deviceIdWrite" required>
+                                    <option value="">Select Device</option>
+                                    <option value="plc-001">plc-001</option>
+                                    <option value="plc-002">plc-002</option>
+                                    <option value="plc-003">plc-003</option>
+                                    <option value="plc-004">plc-004</option>
+                                    <option value="plc-005">plc-005</option>
+                                    <option value="plc-006">plc-006</option>
+                                    <option value="plc-007">plc-007</option>
+                                    <option value="plc-008">plc-008</option>
+                                    <option value="plc-009">plc-009</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="registerNumberWrite">Register</label>
+                                <select id="registerNumberWrite" required>
+                                    <option value="">Select Register</option>
+                                    <option value="40001">40001</option>
+                                    <option value="40002">40002</option>
+                                    <option value="40003">40003</option>
+                                    <option value="40004">40004</option>
+                                    <option value="40005">40005</option>
+                                    <option value="40006">40006</option>
+                                    <option value="40007">40007</option>
+                                    <option value="40008">40008</option>
+                                    <option value="40009">40009</option>
+                                    <option value="40010">40010</option>
+                                    <option value="40011">40011</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="valueWrite">Value (0-65535)</label>
+                                <input type="number" id="valueWrite" min="0" max="65535" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="priorityWrite">Priority</label>
+                                <select id="priorityWrite" required>
+                                    <option value="">Select Priority</option>
+                                    <option value="normal">Normal</option>
+                                    <option value="critical">Critical</option>
+                                </select>
+                            </div>
+                            <div class="form-group full-width">
+                                <label for="descriptionWrite">Description</label>
+                                <textarea id="descriptionWrite" rows="2" maxlength="500"></textarea>
+                            </div>
+                            <div class="form-group full-width"
+                                style="display:flex; align-items:center; gap:12px; margin-top: 15px; margin-bottom: 5px;">
+                                <label class="switch">
+                                    <input type="checkbox" id="scheduleCheck" onchange="toggleScheduleTime()">
+                                    <span class="slider"></span>
+                                </label>
+                                <span style="font-weight: 600; color: var(--text-primary); font-size: 0.9rem;">Schedule
+                                    Command</span>
+                            </div>
+                            <div class="form-group full-width" id="scheduleTimeGroup"
+                                style="display:none; margin-top: 10px;">
+                                <label for="scheduleTime">Schedule Time</label>
+                                <input type="datetime-local" id="scheduleTime"
+                                    style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(31, 41, 55, 0.6); border: 1px solid rgba(148, 163, 184, 0.3); color: white;">
+                            </div>
+                        </div>
+                        <button type="submit" class="submit-btn">Send Command</button>
+                    </form>
+                </div>
+
+                <div id="readCommand" class="cmd-tab-content" style="display:none;">
+                    <form id="readForm">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="deviceIdRead">Device ID</label>
+                                <select id="deviceIdRead" required>
+                                    <option value="">Select Device</option>
+                                    <option value="plc-001">plc-001</option>
+                                    <option value="plc-002">plc-002</option>
+                                    <option value="plc-003">plc-003</option>
+                                    <option value="plc-004">plc-004</option>
+                                    <option value="plc-005">plc-005</option>
+                                    <option value="plc-006">plc-006</option>
+                                    <option value="plc-007">plc-007</option>
+                                    <option value="plc-008">plc-008</option>
+                                    <option value="plc-009">plc-009</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="registerNumberRead">Register</label>
+                                <select id="registerNumberRead" required>
+                                    <option value="">Select Register</option>
+                                    <option value="40001">40001</option>
+                                    <option value="40002">40002</option>
+                                    <option value="40003">40003</option>
+                                    <option value="40004">40004</option>
+                                    <option value="40005">40005</option>
+                                    <option value="40006">40006</option>
+                                    <option value="40007">40007</option>
+                                    <option value="40008">40008</option>
+                                    <option value="40009">40009</option>
+                                    <option value="40010">40010</option>
+                                    <option value="40011">40011</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="priorityRead">Priority</label>
+                                <select id="priorityRead" required>
+                                    <option value="normal">Normal</option>
+                                    <option value="critical">Critical</option>
+                                </select>
+                            </div>
+                            <div class="form-group full-width">
+                                <label>Read Value</label>
+                                <textarea id="readResultDisplay" readonly rows="3"></textarea>
+                            </div>
+                        </div>
+                        <button type="submit" class="submit-btn read-btn">Check Read Command Status</button>
+                    </form>
+                </div>
+            </div>
+
+            
+            <div id="pendingApprovals" class="tab-content content-card">
+                <h2 class="card-title">Pending Approvals</h2>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Issued By</th>
+                                <th>Device</th>
+                                <th>Register</th>
+                                <th>Value</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pendingTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            
+            <div id="pendingApprovals" class="tab-content content-card">
+                <h2 class="card-title">Pending Scheduled Commands</h2>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Issued By</th>
+                                <th>Device</th>
+                                <th>Register</th>
+                                <th>Value</th>
+                                <th>Scheduled For</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pendingTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            
+            <div id="userManagement" class="tab-content content-card">
+                <h2 class="card-title">User Management</h2>
+                <div style="margin-bottom: 20px; background: rgba(31,41,55,0.6); padding: 15px; border-radius: 8px;">
+                    <h3>Add New User</h3>
+                    <form id="addUserForm"
+                        style="display:flex; gap:10px; align-items:flex-end; margin-top:10px; flex-wrap:wrap;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Username</label>
+                            <input type="text" id="newUsername" required>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Password</label>
+                            <input type="password" id="newPassword" required>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Role</label>
+                            <select id="newRole" required>
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="action-btn btn-approve"
+                            style="padding:12px 20px; border-radius:12px; margin:0;">Add</button>
+                    </form>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Role</th>
+                                <th>Last Login</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            
+            <div id="attackSimulation" class="tab-content content-card" style="text-align:center;">
+                <h2 class="card-title">Attack Simulation</h2>
+                <p class="card-description" style="margin-bottom: 30px;">Run a predefined sequence of malicious commands
+                    to test DMZ and ML detection.</p>
+                <button id="runAttackBtn" class="btn-run" onclick="promptAttackSimulation()">Run Attack
+                    Simulation</button>
+                <div id="attackResults"
+                    style="margin-top: 30px; display: none; background: rgba(31,41,55,0.6); padding: 20px; border-radius: 12px; text-align: left;">
+                </div>
+            </div>
+        </main>
+    </div>
+
+    
+    <div id="attackModal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 class="modal-title">Confirm Attack Simulation</h3>
+            <div class="form-group">
+                <label>Please enter your password to authorize:</label>
+                <input type="password" id="attackPassword">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModal('attackModal')">Cancel</button>
+                <button class="action-btn btn-approve" onclick="executeAttack()">Execute</button>
+            </div>
+        </div>
+    </div>
+
+    
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+    <script>
+        // ========== CONFIGURATION ==========
+        // DMZ_URL is defined in app.js but we re-declare to be safe
+        if (typeof DMZ_URL === 'undefined') {
+            var DMZ_URL = "https://entrap-underfed-collapse.ngrok-free.dev";
+        }
+        var API_BASE_URL = "http://localhost:8000";  // Point to FastAPI backend
+        var API_V1_URL = `${API_BASE_URL}/api/v1`;
+
+        // ========== UTILITY FUNCTIONS ==========
+        function getAccessToken() {
+            return sessionStorage.getItem('jwt');
+        }
+        function getDmzToken() {
+            return sessionStorage.getItem('dmz_session_token');
+        }
+
+        // apiFetch wrapper for IT endpoints (with JWT)
+        async function apiFetch(url, options = {}) {
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getAccessToken()}`,
+                ...options.headers
+            };
+            if (getDmzToken()) {
+                headers['X-DMZ-Session-Token'] = getDmzToken();
+            }
+            try {
+                const resp = await fetch(url, { ...options, headers });
+                if (resp.status === 401) {
+                    logout();
+                    throw new Error('Unauthorized');
+                }
+                return resp;
+            } catch (err) {
+                console.error('apiFetch error:', err);
+                return null;
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function logout() {
+            sessionStorage.clear();
+            window.location.href = 'login.html';
+        }
+
+        // ========== TAB MANAGEMENT ==========
+        let livePollingInterval = null;
+
+        function openAdminTab(evt, tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            // Deactivate all main tab buttons
+            document.querySelectorAll('.main-content > .tabs .tab-button').forEach(btn => btn.classList.remove('active'));
+            // Show target tab
+            const target = document.getElementById(tabName);
+            if (target) target.style.display = 'block';
+            // Activate clicked tab button
+            if (evt && evt.currentTarget) evt.currentTarget.classList.add('active');
+            else {
+                const btns = document.querySelectorAll('.main-content > .tabs .tab-button');
+                btns.forEach(b => {
+                    if (b.textContent.toLowerCase().replace(/\s/g, '') === tabName.toLowerCase().replace(/\s/g, '')) {
+                        b.classList.add('active');
+                    }
+                });
+            }
+
+            // Start the dashboard polling ONCE, never stop it
+            if (!livePollingInterval) {
+                fetchCommands(true);
+                livePollingInterval = setInterval(() => {
+                    fetchCommands(true);
+                    const pendingTab = document.getElementById('pendingApprovals');
+                    if (pendingTab && pendingTab.style.display === 'block') {
+                        fetchPending();
+                    }
+                }, 2000);
+            }
+
+            // Refresh other tabs when opened
+            if (tabName === 'commandHistory') fetchCommands(false);
+            if (tabName === 'pendingApprovals') fetchPending();
+            if (tabName === 'userManagement') fetchUsers();
+        }
+
+        function openCmdTab(evt, tabName) {
+            document.querySelectorAll('.cmd-tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('#directCommand .cmd-tabs .tab-button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(tabName).style.display = 'block';
+            if (evt && evt.currentTarget) evt.currentTarget.classList.add('active');
+        }
+
+        // ========== LIVE DASHBOARD & HISTORY ==========
+        async function fetchCommands(isLive) {
+            const dmzToken = getDmzToken();
+            if (!dmzToken) {
+                console.warn('No DMZ session token');
+                if (isLive) {
+                    const tbody = document.getElementById('liveTableBody');
+                    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger-red);">Missing DMZ session token</td></tr>';
+                }
+                return;
+            }
+            try {
+                const resp = await fetch(`${DMZ_URL}/api/session/commands`, {
+                    headers: {
+                        'x-session-token': dmzToken,
+                        'ngrok-skip-browser-warning': 'true'
+                    },
+                    cache: 'no-store'
+                });
+                if (resp.status === 401) {
+                    showToast('DMZ session expired – logging out', 'warning');
+                    logout();
+                    return;
+                }
+                if (!resp.ok) {
+                    console.error('DMZ session fetch failed:', resp.status);
+                    if (isLive) {
+                        const tbody = document.getElementById('liveTableBody');
+                        if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--danger-red);">DMZ error (${resp.status}) – retrying...</td></tr>`;
+                    }
+                    return;                    // keep old data, if any
+                }
+                const data = await resp.json();
+                const commands = Array.isArray(data) ? data : [];
+
+                updateStats(commands);
+
+                if (isLive) {
+                    const tbody = document.getElementById('liveTableBody');
+                    if (!tbody) return;
+                    if (commands.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);">No commands in this session yet</td></tr>';
+                    } else {
+                        renderCommandsTable('liveTableBody', commands.slice(-10).reverse());
+                    }
+                } else {
+                    renderCommandsTable('historyTableBody', commands.reverse());
+                }
+            } catch (err) {
+                console.error('Failed to fetch from DMZ:', err);
+                if (isLive) {
+                    const tbody = document.getElementById('liveTableBody');
+                    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger-red);">Network error – check DMZ connection</td></tr>';
+                }
+            }
+        }
+
+        // ========== UPDATE STAT CARDS ==========
+        function updateStats(commands) {
+            const total = commands.length;
+            // Only count as approved if dmz_decision is approved AND status does not contain 'rejected'
+            const approved = commands.filter(c => {
+                const decision = (c.dmz_decision || '').toLowerCase();
+                const status = (c.status || c.command_status || '').toLowerCase();
+                return decision === 'approved' && !status.includes('rejected');
+            }).length;
+            const rejected = commands.filter(c => {
+                const decision = (c.dmz_decision || '').toLowerCase();
+                const status = (c.status || c.command_status || '').toLowerCase();
+                return decision === 'rejected' || status.includes('rejected');
+            }).length;
+            const executed = commands.filter(c => (c.status || '').toLowerCase() === 'executed' || (c.status || '').toLowerCase() === 'completed').length;
+
+            document.getElementById('statTotal').textContent = total;
+            document.getElementById('statApproved').textContent = approved;
+            document.getElementById('statReject').textContent = rejected;
+            document.getElementById('statExecuted').textContent = executed;
+        }
+
+        // ========== RENDER TABLE ROWS ==========
+        const formatTimestamp = (timestamp) => {
+            if (!timestamp) return 'N/A';
+            try {
+                const date = new Date(timestamp);
+                return date.toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                });
+            } catch (e) {
+                return 'N/A';
+            }
+        };
+
+        function renderCommandsTable(tbodyId, commands) {
+            const tbody = document.getElementById(tbodyId);
+            tbody.innerHTML = '';
+            const filterText = (document.getElementById('historyFilter')?.value || '').toLowerCase();
+
+            commands.forEach(cmd => {
+                if (filterText) {
+                    const str = JSON.stringify(cmd).toLowerCase();
+                    if (!str.includes(filterText)) return;
+                }
+
+                const tr = document.createElement('tr');
+                const status = (cmd.status || cmd.command_status || '').toLowerCase();
+                const dmzDecision = (cmd.dmz_decision || '').toLowerCase();
+                if (status.includes('rejected') || dmzDecision === 'rejected') tr.className = 'row-error';
+                else if (status.includes('suspicious') || status.includes('pending')) tr.className = 'row-warning';
+                // Both completed and executed get green row styling
+                else if (status.includes('completed') || status.includes('executed') || status.includes('approved') || status.includes('success'))
+                    tr.className = 'row-success';
+
+                // Map r/w to Read/Write and unify completed/executed to Executed
+                const typeMap = { 'r': 'Read', 'w': 'Write' };
+                const displayType = typeMap[cmd.command_type] || cmd.command_type || '-';
+                let displayStatus = status;
+                if (displayStatus === 'completed' || displayStatus === 'executed') displayStatus = 'Executed';
+
+                tr.innerHTML = `
+                    <td>${cmd.command_id || '-'}</td>
+                    <td>${displayType}</td>
+                    <td>${cmd.device_id || '-'}</td>
+                    <td>${cmd.register || cmd.register_number || '-'}</td>
+                    <td>${cmd.value !== undefined ? cmd.value : '-'}</td>
+                    <td>${displayStatus}</td>
+                    <td>${cmd.dmz_decision || cmd.decision || '-'}</td>
+                    <td>${(typeof cmd.ml_score === 'number') ? cmd.ml_score.toFixed(3) : '-'}</td>
+                    <td>${formatTimestamp(cmd.timestamp)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // History filter listener
+        document.getElementById('historyFilter')?.addEventListener('input', () => fetchCommands(false));
+
+        // ========== PENDING COMMANDS ==========
+        async function fetchPending() {
+            const resp = await apiFetch(`${API_V1_URL}/pending?status=scheduled`);
+            if (!resp || !resp.ok) return;
+            const pending = await resp.json();
+            const tbody = document.getElementById('pendingTableBody');
+            tbody.innerHTML = '';
+            pending.forEach(p => {
+                let data;
+                try {
+                    data = typeof p.command_data === 'string' ? JSON.parse(p.command_data) : p.command_data;
+                } catch (e) {
+                    data = {};
+                }
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${p.id}</td>
+                    <td>${p.issued_by}</td>
+                    <td>${data.device_id || '-'}</td>
+                    <td>${data.register || data.register_number || '-'}</td>
+                    <td>${data.value !== undefined ? data.value : '-'}</td>
+                    <td>${formatTimestamp(p.scheduled_at)}</td>
+                    <td>
+                        <button class="action-btn btn-approve" onclick="executeScheduledCmd('${p.id}')">Execute</button>
+                        <button class="action-btn btn-reject" onclick="deleteScheduledCmd('${p.id}')">Delete</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function executeScheduledCmd(id) {
+            const resp = await apiFetch(`${API_V1_URL}/execute_scheduled/${id}`, { method: 'POST' });
+            if (resp && resp.ok) {
+                showToast('Command executed successfully');
+                fetchPending();
+            } else {
+                showToast('Failed to execute command', 'error');
+            }
+        }
+
+        async function deleteScheduledCmd(id) {
+            if (!confirm('Are you sure you want to delete this scheduled command?')) return;
+            const resp = await apiFetch(`${API_V1_URL}/delete_scheduled/${id}`, { method: 'POST' });
+            if (resp && resp.ok) {
+                showToast('Scheduled command deleted');
+                fetchPending();
+            } else {
+                showToast('Failed to delete command', 'error');
+            }
+        }
+
+        // ========== USER MANAGEMENT ==========
+        async function fetchUsers() {
+            const resp = await apiFetch(`${API_V1_URL}/users`);
+            if (!resp || !resp.ok) return;
+            const users = await resp.json();
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = '';
+            users.forEach(u => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${u.username}</td>
+                    <td>${u.role}</td>
+                    <td>${u.last_login ? formatTimestamp(u.last_login) : 'Never'}</td>
+                    <td>
+                        <button class="action-btn btn-delete" onclick="deleteUser('${u.username}')">Delete</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const role = document.getElementById('newRole').value;
+            if (!username || !password) return;
+            const resp = await apiFetch(`${API_V1_URL}/users`, {
+                method: 'POST',
+                body: JSON.stringify({ username, password, role })
+            });
+            if (resp && resp.ok) {
+                showToast('User created successfully');
+                document.getElementById('newUsername').value = '';
+                document.getElementById('newPassword').value = '';
+                fetchUsers();
+            } else {
+                const text = resp ? await resp.text() : 'Unknown error';
+                showToast('Failed to create user: ' + text, 'error');
+            }
+        });
+
+        async function deleteUser(username) {
+            if (!confirm(`Delete user ${username}?`)) return;
+            const resp = await apiFetch(`${API_V1_URL}/users/${username}`, { method: 'DELETE' });
+            if (resp && resp.ok) {
+                showToast('User deleted');
+                fetchUsers();
+            } else {
+                showToast('Cannot delete user', 'error');
+            }
+        }
+
+        // ========== ATTACK SIMULATION ==========
+        function promptAttackSimulation() {
+            document.getElementById('attackPassword').value = '';
+            document.getElementById('attackModal').classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        async function executeAttack() {
+            const password = document.getElementById('attackPassword').value;
+            if (!password) {
+                showToast('Password is required', 'warning');
+                return;
+            }
+            closeModal('attackModal');
+            const btn = document.getElementById('runAttackBtn');
+            btn.innerHTML = '<span class="spinner"></span> Running Simulation...';
+            btn.disabled = true;
+
+            const resp = await apiFetch(`${API_V1_URL}/run_attack_simulation`, {
+                method: 'POST',
+                body: JSON.stringify({ password })
+            });
+            if (resp && resp.ok) {
+                const data = await resp.json();
+                showToast('Attack simulation completed', 'success');
+                const resultsDiv = document.getElementById('attackResults');
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = `
+                    <h3 style="margin-bottom:10px;">Simulation Results</h3>
+                    <p>Total Commands: ${data.total}</p>
+                    <p style="color:#ef4444;">Blocked: ${data.blocked}</p>
+                    <p style="color:#10b981;">Passed: ${data.passed}</p>
+                `;
+            } else {
+                showToast('Attack simulation failed. Invalid password?', 'error');
+            }
+            btn.innerHTML = 'Run Attack Simulation';
+            btn.disabled = false;
+        }
+
+        // ========== COMMAND FORMS ==========
+        document.getElementById('writeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Sending...';
+            btn.disabled = true;
+
+            const deviceId = document.getElementById('deviceIdWrite').value;
+            const register = parseInt(document.getElementById('registerNumberWrite').value);
+            const value = parseInt(document.getElementById('valueWrite').value);
+            const priority = document.getElementById('priorityWrite').value;
+            const description = document.getElementById('descriptionWrite').value;
+            const requestApproval = false;
+            const issued_by = sessionStorage.getItem('username') || 'Admin1';
+
+            const payload = {
+                command_type: 'w',
+                device_id: deviceId,
+                register: register,
+                value: value,
+                priority: priority,
+                description: description || '',
+                issued_by: issued_by
+            };
+
+            const isScheduled = document.getElementById('scheduleCheck').checked;
+            if (isScheduled) {
+                const schedTime = document.getElementById('scheduleTime').value;
+                if (!schedTime) {
+                    showToast('Please select a schedule time', 'error');
+                    return;
+                }
+                payload.scheduled_at = new Date(schedTime).toISOString();
+            }
+
+            const endpoint = requestApproval ? `${API_V1_URL}/request_write` : `${API_BASE_URL}/api/submit_command`;
+
+            showToast('Sending...', 'info');
+            const resp = await apiFetch(endpoint, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            if (resp && resp.ok) {
+                showToast(requestApproval ? 'Write command submitted for approval' : 'Command sent successfully');
+                document.getElementById('writeForm').reset();
+                // Immediately refresh dashboard
+                fetchCommands(true);
+            } else {
+                const data = resp ? await resp.json() : {};
+                showToast(data.detail || 'Failed to send command', 'error');
+            }
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+
+        document.getElementById('readForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Sending...';
+            btn.disabled = true;
+
+            const payload = {
+                command_type: 'r',
+                device_id: document.getElementById('deviceIdRead').value,
+                register: parseInt(document.getElementById('registerNumberRead').value),
+                priority: document.getElementById('priorityRead').value,
+                issued_by: sessionStorage.getItem('username') || 'Admin1'
+            };
+
+            showToast('Sending...', 'info');
+            const resp = await apiFetch(`${API_BASE_URL}/api/submit_command`, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            if (resp && resp.ok) {
+                const data = await resp.json();
+                const val = data.read_value !== undefined ? data.read_value : 'N/A';
+                document.getElementById('readResultDisplay').value = val;
+                showToast('Read command successful');
+                // Immediately refresh dashboard
+                fetchCommands(true);
+            } else {
+                showToast('Failed to read register', 'error');
+            }
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+
+        // CSV download (unchanged)
+        async function downloadCsv() {
+            const resp = await apiFetch(`${API_V1_URL}/session/report?format=csv`);
+            if (resp && resp.ok) {
+                const blob = await resp.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "session_report.csv";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } else {
+                showToast('Failed to generate report', 'error');
+            }
+        }
+
+        function openSplunkDashboard() {
+            window.open('http://riz:8000/en-US/app/search/industrial_control_systems_command_lifecycle_overview_', '_blank', 'noopener,noreferrer');
+        }
+
+        async function checkDmzHealth() {
+            const indicator = document.getElementById('dmzStatusIndicator');
+            if (!indicator) return;
+            const dmzToken = getDmzToken();
+            if (!dmzToken) {
+                indicator.textContent = 'NO TOKEN';
+                indicator.className = 'status-pill muted';
+                return;
+            }
+            try {
+                const resp = await fetch(`${DMZ_URL}/api/session/commands`, {
+                    headers: {
+                        'x-session-token': dmzToken,
+                        'ngrok-skip-browser-warning': 'true'
+                    }
+                });
+                if (resp.ok) {
+                    indicator.textContent = 'DMZ ONLINE';
+                    indicator.className = 'status-pill success';
+                } else {
+                    indicator.textContent = 'DMZ OFFLINE';
+                    indicator.className = 'status-pill danger';
+                }
+            } catch (err) {
+                indicator.textContent = 'DMZ OFFLINE';
+                indicator.className = 'status-pill danger';
+            }
+        }
+
+        function toggleScheduleTime() {
+            const check = document.getElementById('scheduleCheck');
+            const group = document.getElementById('scheduleTimeGroup');
+            const btn = document.querySelector('#writeForm button[type="submit"]');
+            if (check.checked) {
+                group.style.display = 'block';
+                btn.innerHTML = 'Schedule Command';
+            } else {
+                group.style.display = 'none';
+                btn.innerHTML = 'Send Command';
+            }
+        }
+
+        // ========== INITIALISATION ==========
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!sessionStorage.getItem('jwt') || !sessionStorage.getItem('dmz_session_token')) {
+                sessionStorage.clear();
+                window.location.href = 'login.html';
+                return;
+            }
+
+            const username = sessionStorage.getItem('username');
+            if (username) {
+                document.getElementById('currentUsername').textContent = username;
+            }
+            // Start live dashboard – polling runs forever
+            openAdminTab(null, 'liveDashboard');
+
+            // Restore sidebar state
+            try {
+                const collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+                if (collapsed) document.body.classList.add('sidebar-collapsed');
+                const icon = document.getElementById('collapseIcon');
+                if (icon) icon.textContent = collapsed ? '⟩' : '⟨';
+            } catch (_) { }
+
+            // Check DMZ health
+            checkDmzHealth();
+            setInterval(checkDmzHealth, 10000);
+
+            lucide.createIcons();
+        });
+
+        function toggleSidebar() {
+            const collapsed = document.body.classList.toggle('sidebar-collapsed');
+            try { localStorage.setItem('sidebarCollapsed', String(collapsed)); } catch (_) { }
+            const icon = document.getElementById('collapseIcon');
+            if (icon) icon.textContent = collapsed ? '⟩' : '⟨';
+        }
+    </script>
+</body>
+
+</html>
