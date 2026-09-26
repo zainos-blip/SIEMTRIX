@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Command Dispatch Console</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <div class="header-left">
+                    <div class="header-icon">
+                        <img src="assets/Logo.png" alt="Logo">
+                    </div>
+                    <div>
+                        <h1>Command Dispatch Console</h1>
+                        <p class="subtitle">Manage device commands and operations</p>
+                    </div>
+                </div>
+                <button class="logout-btn" onclick="logout()">
+                    <span>Logout</span>
+                    <span class="logout-icon">→</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="content-card">
+            <h2 class="card-title">Device Command Management</h2>
+            <p class="card-description">Write commands to devices or read current register values</p>
+
+            <div class="tabs">
+                <button class="tab-button active" onclick="openTab(event, 'writeCommand')">
+                    <span class="tab-icon">⚡</span>
+                    <span>Write Command</span>
+                </button>
+                <button class="tab-button" onclick="openTab(event, 'readCommand')">
+                    <span class="tab-icon">👁</span>
+                    <span>Read Command</span>
+                </button>
+            </div>
+
+            <div id="writeCommand" class="tab-content active">
+                <form id="writeForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="deviceIdWrite">Device ID</label>
+                            <select id="deviceIdWrite" name="deviceId" required>
+                                <option value="">Select Device</option>
+                                <option value="plc-001">plc-001</option>
+                                <option value="plc-002">plc-002</option>
+                                <option value="plc-003">plc-003</option>
+                                <option value="plc-004">plc-004</option>
+                                <option value="plc-005">plc-005</option>
+                                <option value="plc-006">plc-006</option>
+                                <option value="plc-007">plc-007</option>
+                                <option value="plc-008">plc-008</option>
+                                <option value="plc-009">plc-009</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="registerNumberWrite">Register</label>
+                            <select id="registerNumberWrite" name="registerNumber" required>
+                                <option value="">Select Register</option>
+                                <option value="40001">40001</option>
+                                <option value="40002">40002</option>
+                                <option value="40003">40003</option>
+                                <option value="40004">40004</option>
+                                <option value="40005">40005</option>
+                                <option value="40006">40006</option>
+                                <option value="40007">40007</option>
+                                <option value="40008">40008</option>
+                                <option value="40009">40009</option>
+                                <option value="40010">40010</option>
+                                <option value="40011">40011</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="valueWrite">Value (0-65535)</label>
+                            <input type="number" id="valueWrite" name="value" required placeholder="100" min="0"
+                                max="65535">
+                        </div>
+                        <div class="form-group">
+                            <label for="priorityWrite">Priority</label>
+                            <select id="priorityWrite" name="priority" required>
+                                <option value="">Select Priority</option>
+                                <option value="normal">Normal</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="issuedByWrite">Issued By</label>
+                            <input type="text" id="issuedByWrite" name="issuedBy" value="Admin1" readonly>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label for="descriptionWrite">Description (max 500 characters)</label>
+                            <textarea id="descriptionWrite" name="description" rows="2"
+                                placeholder="Optional description" maxlength="500"></textarea>
+                            <small class="char-count"><span id="charCountWrite">0</span>/500</small>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-btn">
+                        Send Write Command
+                    </button>
+                </form>
+            </div>
+
+            <div id="readCommand" class="tab-content">
+                <form id="readForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="deviceIdRead">Device ID</label>
+                            <select id="deviceIdRead" name="deviceId" required>
+                                <option value="">Select Device</option>
+                                <option value="plc-001">plc-001</option>
+                                <option value="plc-002">plc-002</option>
+                                <option value="plc-003">plc-003</option>
+                                <option value="plc-004">plc-004</option>
+                                <option value="plc-005">plc-005</option>
+                                <option value="plc-006">plc-006</option>
+                                <option value="plc-007">plc-007</option>
+                                <option value="plc-008">plc-008</option>
+                                <option value="plc-009">plc-009</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="registerNumberRead">Register</label>
+                            <select id="registerNumberRead" name="registerNumber" required>
+                                <option value="">Select Register</option>
+                                <option value="40001">40001</option>
+                                <option value="40002">40002</option>
+                                <option value="40003">40003</option>
+                                <option value="40004">40004</option>
+                                <option value="40005">40005</option>
+                                <option value="40006">40006</option>
+                                <option value="40007">40007</option>
+                                <option value="40008">40008</option>
+                                <option value="40009">40009</option>
+                                <option value="40010">40010</option>
+                                <option value="40011">40011</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="priorityRead">Priority</label>
+                            <select id="priorityRead" name="priority" required>
+                                <option value="">Select Priority</option>
+                                <option value="normal">Normal</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="issuedByRead">Issued By</label>
+                            <input type="text" id="issuedByRead" name="issuedBy" value="Admin1" readonly>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="readResultDisplay">Read Value</label>
+                            <input type="text" id="readResultDisplay" readonly
+                                placeholder="Value will appear here after reading">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-btn">
+                        Check Read Command Status
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div id="statusBox" class="status-box hidden"></div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script>
+        function openTab(evt, tabName) {
+            var i, tabcontent, tabbuttons;
+            tabcontent = document.getElementsByClassName("tab-content");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].classList.remove('active'); // Use class to manage visibility
+            }
+            tabbuttons = document.getElementsByClassName("tab-button");
+            for (i = 0; i < tabbuttons.length; i++) {
+                tabbuttons[i].className = tabbuttons[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).classList.add('active'); // Use class to manage visibility
+            if (evt && evt.currentTarget) { // Ensure evt and currentTarget exist before accessing
+                evt.currentTarget.className += " active";
+            }
+
+            // Hide status box on tab switch
+            if (tabName === 'writeCommand') {
+                document.getElementById('statusBox').classList.add('hidden'); // Hide status box on tab switch
+            } else if (tabName === 'readCommand') {
+                // Ensure status box is hidden when switching to read tab initially
+                document.getElementById('statusBox').classList.add('hidden');
+            }
+            localStorage.setItem('activeTab', tabName); // Store active tab on each switch
+        }
+
+        // Default open the first tab - MODIFIED
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!sessionStorage.getItem('authenticated')) {
+                window.location.href = 'login.html';
+            } else {
+                // Open the default tab, but only on first load, not after a form submission refresh
+                const currentTab = localStorage.getItem('activeTab') || 'writeCommand';
+                const tabButton = document.querySelector(`.tab-button[onclick="openTab(event, '${currentTab}')"]`);
+                if (tabButton) {
+                    tabButton.click();
+                } else {
+                    // Fallback if no stored tab or button found, activate writeCommand
+                    document.querySelector('.tab-button').click(); // Activate the first tab button available
+                }
+
+                document.getElementById('issuedByWrite').value = 'Admin1';
+                document.getElementById('issuedByRead').value = 'Admin1';
+            }
+        });
+
+        function logout() {
+            sessionStorage.removeItem('authenticated');
+            sessionStorage.removeItem('username');
+            window.location.href = 'login.html';
+        }
+
+        const WRITE_API_URL = 'http://localhost:8000/api/submit_command';
+        const READ_API_URL = 'http://localhost:8000/api/submit_command';
+        const CONNECTION_ERROR_MSG = 'Connection error: Unable to reach command service. Please confirm the backend is running.';
+
+        const parseJsonSafe = async (response) => {
+            try {
+                return await response.json();
+            } catch (_) {
+                return null;
+            }
+        };
+
+        const extractErrorMessage = (data, defaultMsg = CONNECTION_ERROR_MSG) => {
+            if (!data) return defaultMsg;
+            const raw = data.message || data.detail || data.error || data.status || data;
+            if (typeof raw === 'string') {
+                const lower = raw.toLowerCase();
+                if (lower.includes('<html') || lower.includes('<!doctype')) {
+                    return defaultMsg;
+                }
+                return raw;
+            }
+            return defaultMsg;
+        };
+
+        const formatError = (response, data, defaultMsg = CONNECTION_ERROR_MSG) => {
+            if (response && response.status === 502) {
+                return CONNECTION_ERROR_MSG;
+            }
+            const msg = extractErrorMessage(data, defaultMsg);
+            if (typeof msg === 'string' && msg.toLowerCase().includes('admin1')) {
+                return 'Permission denied: only Admin1 can issue this command.';
+            }
+            return msg;
+        };
+
+        // Character count for description fields
+        const descriptionWriteTextarea = document.getElementById('descriptionWrite');
+        const charCountWrite = document.getElementById('charCountWrite');
+        descriptionWriteTextarea.addEventListener('input', () => {
+            charCountWrite.textContent = descriptionWriteTextarea.value.length;
+        });
+
+
+        const writeForm = document.getElementById('writeForm');
+        const readForm = document.getElementById('readForm');
+        const statusBox = document.getElementById('statusBox');
+
+        writeForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Ensure this is the very first line
+            console.log('Write form submission prevented default.'); // Debug log
+
+            statusBox.classList.add('hidden');
+            statusBox.className = 'status-box hidden';
+
+            const commandType = 'w';
+            const deviceId = document.getElementById('deviceIdWrite').value.toUpperCase();
+            const registerNumber = parseInt(document.getElementById('registerNumberWrite').value);
+            const value = parseInt(document.getElementById('valueWrite').value);
+            const priority = document.getElementById('priorityWrite').value;
+            const description = document.getElementById('descriptionWrite').value || '';
+
+            if (value < 0 || value > 65535) {
+                statusBox.textContent = 'Error: Value must be between 0 and 65535';
+                statusBox.className = 'status-box error';
+                statusBox.classList.remove('hidden');
+                return;
+            }
+            if (description.length > 500) {
+                statusBox.textContent = 'Error: Description must be 500 characters or less';
+                statusBox.className = 'status-box error';
+                statusBox.classList.remove('hidden');
+                return;
+            }
+
+            const formData = {
+                command_type: commandType,
+                device_id: deviceId,
+                register: registerNumber,
+                value: value,
+                priority: priority,
+                description: description,
+                issued_by: 'Admin1'
+            };
+
+            try {
+                const response = await fetch(WRITE_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await parseJsonSafe(response);
+
+                if (response.ok) {
+                    statusBox.textContent = 'Write command sent successfully';
+                    statusBox.className = 'status-box success';
+                    // writeForm.reset(); // Removed for debugging
+                    document.getElementById('deviceIdWrite').value = ''; // Clear selectively
+                    document.getElementById('registerNumberWrite').value = ''; // Clear selectively
+                    document.getElementById('valueWrite').value = ''; // Clear selectively
+                    document.getElementById('priorityWrite').value = ''; // Clear selectively
+                    document.getElementById('descriptionWrite').value = ''; // Clear selectively
+
+                    document.getElementById('issuedByWrite').value = 'Admin1';
+                    charCountWrite.textContent = '0';
+                } else {
+                    statusBox.textContent = `Error: ${formatError(response, data)}`;
+                    statusBox.className = 'status-box error';
+                }
+            } catch (error) {
+                statusBox.textContent = CONNECTION_ERROR_MSG;
+                statusBox.className = 'status-box error';
+            }
+            statusBox.classList.remove('hidden');
+            localStorage.setItem('activeTab', 'writeCommand'); // Store active tab
+            return false; // Added as extra measure
+        });
+
+        readForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Ensure this is the very first line
+            console.log('Read form submission prevented default.'); // Debug log
+
+            statusBox.classList.add('hidden');
+            statusBox.className = 'status-box hidden';
+
+            // Store current values before potential reset
+            const currentDeviceId = document.getElementById('deviceIdRead').value;
+            const currentRegisterNumber = document.getElementById('registerNumberRead').value;
+            const currentPriority = document.getElementById('priorityRead').value;
+
+            const deviceId = document.getElementById('deviceIdRead').value;
+            const registerNumber = parseInt(document.getElementById('registerNumberRead').value);
+            const priority = document.getElementById('priorityRead').value;
+
+            const formData = {
+                command_type: 'r',
+                device_id: deviceId,
+                register: registerNumber,
+                value: null, // Value is null for read commands
+                priority: priority,
+                issued_by: 'Admin1',
+            };
+
+            try {
+                const response = await fetch(READ_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await parseJsonSafe(response);
+
+                const readResultDisplay = document.getElementById('readResultDisplay');
+
+                if (response.ok) {
+                    if (data.read_value !== undefined && data.read_value !== null) {
+                        readResultDisplay.value = String(data.read_value);
+                        statusBox.textContent = 'Read command successful';
+                        statusBox.className = 'status-box success';
+                        statusBox.classList.remove('hidden');
+                    } else {
+                        readResultDisplay.value = 'No value could be read against device ID / register / priority level';
+                        statusBox.textContent = 'Read command completed - no matching value found';
+                        statusBox.className = 'status-box error';
+                        statusBox.classList.remove('hidden');
+                    }
+
+                    document.getElementById('deviceIdRead').value = currentDeviceId;
+                    document.getElementById('registerNumberRead').value = currentRegisterNumber;
+                    document.getElementById('priorityRead').value = currentPriority;
+                    document.getElementById('issuedByRead').value = 'Admin1';
+
+                } else {
+                    const friendly = formatError(response, data, 'Read command failed');
+                    readResultDisplay.value = `Error: ${friendly}`;
+                    statusBox.textContent = friendly;
+                    statusBox.className = 'status-box error';
+                    statusBox.classList.remove('hidden');
+                }
+            } catch (error) {
+                const readResultDisplay = document.getElementById('readResultDisplay');
+                readResultDisplay.value = CONNECTION_ERROR_MSG;
+                statusBox.textContent = 'Read command failed';
+                statusBox.className = 'status-box error';
+                statusBox.classList.remove('hidden');
+            }
+            statusBox.classList.remove('hidden');
+            localStorage.setItem('activeTab', 'readCommand'); // Store active tab
+            return false; // Added as extra measure
+        });
+    </script>
+</body>
+
+</html>
